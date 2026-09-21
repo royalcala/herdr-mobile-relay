@@ -35,6 +35,7 @@ import (
 	"github.com/0cv/herdr-mobile-relay/internal/fsutil"
 	"github.com/0cv/herdr-mobile-relay/internal/herdr"
 	"github.com/0cv/herdr-mobile-relay/internal/history"
+	"github.com/0cv/herdr-mobile-relay/internal/machines"
 	"github.com/0cv/herdr-mobile-relay/internal/noecho"
 	"github.com/0cv/herdr-mobile-relay/internal/panesize"
 	"github.com/0cv/herdr-mobile-relay/internal/profiles"
@@ -113,6 +114,7 @@ type Server struct {
 	copyMu           sync.Mutex
 	paneSizeM        *panesize.Manager
 	dispatcher       *coordinator.Dispatcher
+	machinesM        *machines.Manager
 	updateM          *relayupdate.Manager
 	appDeployM       *appdeploy.Manager
 	hybrid           *hybridTransport
@@ -131,6 +133,7 @@ type Server struct {
 	stateViewMu   sync.RWMutex
 	agentView     []*coordinator.AgentState
 	workspaceView []herdr.Workspace
+	machineView   []map[string]any
 	inventoryView map[string]any
 
 	refreshMu      sync.Mutex
@@ -163,6 +166,7 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 	_, clipboardRead, _ := clipboard.Reader()
 	pollInterval := time.Duration(cfg.PollInterval * float64(time.Second))
 	poller := coordinator.NewPoller(herdrClient, state, pollInterval, logger)
+	machinesManager := machines.NewManager(herdrClient, logger)
 
 	home, _ := os.UserHomeDir()
 	hostname, _ := os.Hostname()
@@ -240,6 +244,7 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 		speechRemove:        speech.Remove,
 		speechLanguages:     speechLanguages,
 		herdrC:              herdrClient,
+		machinesM:           machinesManager,
 		paneSizeM:           panesize.NewManager(herdrClient, logger),
 		profiles:            profResolver,
 		sessions:            sessResolver,
@@ -343,6 +348,21 @@ func (s *Server) forgetPushTest(deviceID string) {
 	s.pushTestMu.Lock()
 	defer s.pushTestMu.Unlock()
 	delete(s.pushTestLast, deviceID)
+}
+
+func validateRemoteMachineTarget(manager *machines.Manager, inbound protocol.Inbound, machineID string) *protocol.ApiError {
+	if manager == nil {
+		apiErr := protocol.NewApiError(protocol.ErrorInvalidRequest, map[string]any{"field": "machine_id"})
+		return &apiErr
+	}
+	if inbound.PaneID == "" {
+		return nil
+	}
+	if _, ok := manager.Agent(machineID, inbound.PaneID); !ok {
+		apiErr := protocol.NewApiError(protocol.ErrorInvalidRequest, map[string]any{"field": "machine_id"})
+		return &apiErr
+	}
+	return nil
 }
 
 func validateExactPaneTarget(state *coordinator.State, inbound protocol.Inbound, authenticated bool) *protocol.ApiError {
@@ -679,7 +699,28 @@ func (s *Server) Run(ctx context.Context) error {
 			return
 		}
 		_, authenticated := client.Identity()
-		if targetErr := validateExactPaneTarget(s.state, inbound, authenticated); targetErr != nil {
+		machineID := inbound.MachineID
+		if machineID == "" && inbound.Target != nil {
+			machineID = inbound.Target.MachineID
+		}
+		if protocol.IsRemoteMachine(machineID) {
+			// Remote machines are a read-only mirror this round: their panes live
+			// outside the local state, so validate against the mirror and refuse
+			// every mutating action with a clear reason instead of a generic one.
+			if remoteErr := validateRemoteMachineTarget(s.machinesM, inbound, machineID); remoteErr != nil {
+				admitted()
+				s.hub.Send(client, protocol.ErrorResponse(inbound.RequestID, *remoteErr))
+				return
+			}
+			if scope.Action.Class == protocol.ActionMutating {
+				admitted()
+				s.hub.Send(client, protocol.ErrorResponse(inbound.RequestID, protocol.NewApiError(
+					protocol.ErrorInvalidRequest,
+					map[string]any{"field": "machine_id", "reason": "remote_read_only"},
+				)))
+				return
+			}
+		} else if targetErr := validateExactPaneTarget(s.state, inbound, authenticated); targetErr != nil {
 			admitted()
 			s.hub.Send(client, protocol.ErrorResponse(inbound.RequestID, *targetErr))
 			return
@@ -760,6 +801,11 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 			s.sendCommandResult(client, inbound.RequestID, "release_pane_size", true, "completed", "", inbound.PaneID, nil)
 		case "read_pane":
+			if protocol.IsRemoteMachine(machineID) {
+				// The dispatcher routes a machine-tagged read to the CLI `--machine`
+				// path; the local socket API cannot see another server's panes.
+				msg["machine_id"] = machineID
+			}
 			s.applyPaneReadLease(msg)
 			s.stopPaneWatch(client.ID(), inbound.PaneID)
 			resp := s.preparePaneResponse(msg, s.dispatcher.HandleReadPane(ctx, msg))
@@ -772,7 +818,9 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 			s.hub.Send(client, resp)
 		case "watch_pane":
-			s.startPaneWatch(client, msg)
+			if !protocol.IsRemoteMachine(machineID) {
+				s.startPaneWatch(client, msg)
+			}
 		case "unwatch_pane":
 			s.stopPaneWatch(client.ID(), inbound.PaneID)
 		case "pane_applied":
@@ -1330,6 +1378,9 @@ func (s *Server) Run(ctx context.Context) error {
 	s.hybrid = s.startHybridTransport(ctx)
 	startBackground(func() { s.pushM.Run(ctx) })
 	startBackground(func() { s.poller.Run(ctx) })
+	if s.machinesM != nil {
+		startBackground(func() { s.machinesM.Run(ctx) })
+	}
 	startBackground(func() { s.herdrC.RunCapabilityRefresh(ctx, 30*time.Second) })
 	eventClient := herdr.NewEventClient(s.cfg.SocketPath)
 	eventClient.SetWorkspaceReorderedCapability(
@@ -2648,6 +2699,12 @@ func (s *Server) sendConnectionSnapshot(client *transport.ClientConn) {
 		"type":       "workspaces",
 		"workspaces": committed.workspaces,
 	})
+	if len(committed.machines) > 0 {
+		s.hub.Send(client, map[string]any{
+			"type":     "machines",
+			"machines": committed.machines,
+		})
+	}
 	s.hub.Send(client, map[string]any{
 		"type":       "activity_history",
 		"activities": s.recentActivities(500),
@@ -2667,13 +2724,20 @@ func (s *Server) requestAgentRefresh(client *transport.ClientConn) {
 	s.hub.SendBatchPrepared(client, func() []any {
 		committed := s.committedInventorySnapshot()
 		s.observeInventoryPublication("immediate")
-		return []any{
+		messages := []any{
 			inventoryStatusMessage(committed.status),
 			map[string]any{"type": "agents", "agents": committed.agents},
 			map[string]any{"type": "workspaces", "workspaces": committed.workspaces},
 		}
+		if len(committed.machines) > 0 {
+			messages = append(messages, map[string]any{"type": "machines", "machines": committed.machines})
+		}
+		return messages
 	})
 	s.poller.Wake()
+	if s.machinesM != nil {
+		s.machinesM.Wake()
+	}
 }
 
 func (s *Server) sendRequestedAgentRefreshes() {
@@ -2689,11 +2753,15 @@ func (s *Server) sendRequestedAgentRefreshes() {
 		s.hub.SendBatchPreparedByID(clientID, func() []any {
 			committed := s.committedInventorySnapshot()
 			s.observeInventoryPublication("deferred")
-			return []any{
+			messages := []any{
 				inventoryStatusMessage(committed.status),
 				map[string]any{"type": "agents", "agents": committed.agents},
 				map[string]any{"type": "workspaces", "workspaces": committed.workspaces},
 			}
+			if len(committed.machines) > 0 {
+				messages = append(messages, map[string]any{"type": "machines", "machines": committed.machines})
+			}
+			return messages
 		})
 	}
 }
@@ -3448,6 +3516,7 @@ type committedInventory struct {
 	status     map[string]any
 	agents     []*coordinator.AgentState
 	workspaces []herdr.Workspace
+	machines   []map[string]any
 }
 
 // publishCurrentInventory is the sole authoritative inventory writer. Fresh
@@ -3460,6 +3529,11 @@ func (s *Server) setInventoryPublisher(ctx context.Context) {
 	s.poller.SetOnInventoryChange(func() error {
 		return s.publishCurrentInventory(ctx)
 	})
+	if s.machinesM != nil {
+		s.machinesM.SetOnChange(func() error {
+			return s.publishCurrentInventory(ctx)
+		})
+	}
 }
 
 func (s *Server) publishCurrentInventory(ctx context.Context) error {
@@ -3470,34 +3544,49 @@ func (s *Server) publishCurrentInventory(ctx context.Context) error {
 		s.observeInventoryPublication("publication")
 		freshAgents := cloneAgents(fresh.Agents)
 		s.projectAgentResources(freshAgents)
+		remoteAgents, remoteWorkspaces, machinePayload := s.machineMirrorPayload()
+		freshAgents = append(freshAgents, remoteAgents...)
+		nextWorkspaces := append(cloneWorkspaces(fresh.Workspaces), remoteWorkspaces...)
 
 		s.stateViewMu.RLock()
 		previousStatus := cloneStringMap(s.inventoryView)
 		previousAgents := cloneAgents(s.agentView)
 		previousWorkspaces := cloneWorkspaces(s.workspaceView)
+		previousMachines := cloneMachineView(s.machineView)
 		s.stateViewMu.RUnlock()
 
 		mergedAgents := mergeAgentSnapshot(previousAgents, freshAgents)
 		statusChanged := inventoryStatusChanged(previousStatus, fresh.Status)
 		readyRecovery := fresh.Status["state"] == "ready" && previousStatus["state"] != "ready"
 		agentsChanged := !agentSnapshotsEqual(previousAgents, mergedAgents)
-		workspacesChanged := !workspaceSnapshotsEqual(previousWorkspaces, fresh.Workspaces)
+		workspacesChanged := !workspaceSnapshotsEqual(previousWorkspaces, nextWorkspaces)
+		machinesChanged := !machineViewEqual(previousMachines, machinePayload)
 		sendAgents := agentsChanged || readyRecovery
 		sendWorkspaces := workspacesChanged || readyRecovery
+		// Only announce machines once a remote one exists: a phone with no saved
+		// machines sees the exact stream it saw before, and the local group is
+		// implied by the relay itself.
+		sendMachines := (machinesChanged || readyRecovery) && len(machinePayload) > 1
+		// Remote agents are a read-only mirror: they never drive history capture,
+		// push reconciliation, or dispatcher slots, which are keyed by the local
+		// session's pane IDs.
 		if fresh.Status["state"] == "ready" && (agentsChanged || readyRecovery) {
 			runAgentSideEffects = true
-			sideEffectAgents = cloneAgents(mergedAgents)
+			sideEffectAgents = localAgentsOnly(mergedAgents)
 		}
 
-		messages := make([]any, 0, 3)
+		messages := make([]any, 0, 4)
 		if statusChanged {
 			messages = append(messages, inventoryStatusMessage(fresh.Status))
+		}
+		if sendMachines {
+			messages = append(messages, map[string]any{"type": "machines", "machines": cloneMachineView(machinePayload)})
 		}
 		if sendAgents {
 			messages = append(messages, map[string]any{"type": "agents", "agents": cloneAgents(mergedAgents)})
 		}
 		if sendWorkspaces {
-			messages = append(messages, map[string]any{"type": "workspaces", "workspaces": cloneWorkspaces(fresh.Workspaces)})
+			messages = append(messages, map[string]any{"type": "workspaces", "workspaces": cloneWorkspaces(nextWorkspaces)})
 		}
 
 		commit := func() {
@@ -3509,7 +3598,10 @@ func (s *Server) publishCurrentInventory(ctx context.Context) error {
 				s.agentView = cloneAgents(mergedAgents)
 			}
 			if sendWorkspaces {
-				s.workspaceView = cloneWorkspaces(fresh.Workspaces)
+				s.workspaceView = cloneWorkspaces(nextWorkspaces)
+			}
+			if sendMachines {
+				s.machineView = cloneMachineView(machinePayload)
 			}
 			s.stateViewMu.Unlock()
 		}
@@ -3583,15 +3675,90 @@ func cloneWorkspaces(workspaces []herdr.Workspace) []herdr.Workspace {
 	return result
 }
 
+func cloneMachineView(machines []map[string]any) []map[string]any {
+	result := make([]map[string]any, len(machines))
+	for index, machine := range machines {
+		clone := make(map[string]any, len(machine))
+		for key, value := range machine {
+			clone[key] = value
+		}
+		result[index] = clone
+	}
+	return result
+}
+
+func machineViewEqual(left, right []map[string]any) bool {
+	leftData, leftErr := json.Marshal(left)
+	rightData, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftData, rightData)
+}
+
+func localAgentsOnly(agents []*coordinator.AgentState) []*coordinator.AgentState {
+	result := make([]*coordinator.AgentState, 0, len(agents))
+	for _, agent := range agents {
+		if agent.Remote {
+			continue
+		}
+		result = append(result, agent)
+	}
+	return result
+}
+
+// machineMirrorPayload composes the local machine descriptor plus the read-only
+// remote mirror: machine-tagged workspaces, remote agents, and the header rows
+// the phone groups on.
+func (s *Server) machineMirrorPayload() ([]*coordinator.AgentState, []herdr.Workspace, []map[string]any) {
+	machines := []map[string]any{{
+		"machine_id": protocol.LocalMachineID,
+		"label":      s.hostname,
+		"host":       s.hostname,
+		"local":      true,
+		"reachable":  true,
+	}}
+	if s.machinesM == nil {
+		return nil, nil, machines
+	}
+	var agents []*coordinator.AgentState
+	var workspaces []herdr.Workspace
+	for _, snapshot := range s.machinesM.Snapshot() {
+		agents = append(agents, snapshot.Agents...)
+		for _, workspace := range snapshot.Workspaces {
+			workspace.MachineID = snapshot.ID
+			workspaces = append(workspaces, workspace)
+		}
+		entry := map[string]any{
+			"machine_id":      snapshot.ID,
+			"label":           snapshot.Label,
+			"host":            snapshot.Host,
+			"local":           false,
+			"reachable":       snapshot.Reachable,
+			"agent_count":     len(snapshot.Agents),
+			"workspace_count": len(snapshot.Workspaces),
+		}
+		if snapshot.Error != "" {
+			entry["error"] = snapshot.Error
+		}
+		machines = append(machines, entry)
+	}
+	return agents, workspaces, machines
+}
+
 func (s *Server) committedInventorySnapshot() committedInventory {
 	s.stateViewMu.RLock()
 	result := committedInventory{
 		status:     cloneStringMap(s.inventoryView),
 		agents:     cloneAgents(s.agentView),
 		workspaces: cloneWorkspaces(s.workspaceView),
+		machines:   cloneMachineView(s.machineView),
 	}
 	s.stateViewMu.RUnlock()
 	s.projectAgentResources(result.agents)
+	if len(result.machines) == 0 {
+		_, _, result.machines = s.machineMirrorPayload()
+	}
+	if len(result.machines) <= 1 {
+		result.machines = nil
+	}
 	return result
 }
 

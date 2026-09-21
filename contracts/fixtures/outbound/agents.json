@@ -20,6 +20,30 @@
       "session": "",
       "session_name": "",
       "updated_at": 0
+    },
+    {
+      "pane_id": "w2:p2",
+      "raw_pane_id": "w2:p2",
+      "machine_id": "89e249f7163208ccb82f023b8e380191",
+      "remote": true,
+      "terminal_id": "term_65c0073c6e9d03",
+      "generation": 0,
+      "tab_id": "w2:t2",
+      "tab_label": "account-portal",
+      "tab_number": 2,
+      "tab_order": 2,
+      "workspace_id": "w2",
+      "agent": "cmd",
+      "name": "cmd",
+      "status": "blocked",
+      "_focused": false,
+      "cwd": "/srv/dev/1us",
+      "project": "1us",
+      "host": "server-1",
+      "session": "",
+      "session_name": "",
+      "activity_seq": 92,
+      "updated_at": 0
     }
   ]
 }

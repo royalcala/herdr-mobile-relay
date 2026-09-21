@@ -1,0 +1,21 @@
+{
+  "type": "machines",
+  "machines": [
+    {
+      "machine_id": "local",
+      "label": "fedora",
+      "host": "fedora",
+      "local": true,
+      "reachable": true
+    },
+    {
+      "machine_id": "89e249f7163208ccb82f023b8e380191",
+      "label": "server-1",
+      "host": "server-1",
+      "local": false,
+      "reachable": true,
+      "agent_count": 1,
+      "workspace_count": 1
+    }
+  ]
+}

@@ -12,6 +12,52 @@ import (
 	"github.com/0cv/herdr-mobile-relay/internal/slashcmd"
 )
 
+func TestMachinesFixtureShape(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "fixtures", "outbound", "machines.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var msg struct {
+		Type     string           `json:"type"`
+		Machines []map[string]any `json:"machines"`
+	}
+	if err := json.Unmarshal(data, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.Type != "machines" {
+		t.Errorf("type = %q, want machines", msg.Type)
+	}
+	if len(msg.Machines) != 2 {
+		t.Fatalf("machines = %#v, want local plus one remote", msg.Machines)
+	}
+	local := msg.Machines[0]
+	if local["machine_id"] != LocalMachineID || local["local"] != true {
+		t.Fatalf("first machine must be local: %#v", local)
+	}
+	remote := msg.Machines[1]
+	if remote["local"] != false || remote["machine_id"] == "" || remote["label"] != "server-1" {
+		t.Fatalf("remote machine shape = %#v", remote)
+	}
+	if remote["reachable"] != true {
+		t.Fatalf("remote reachable = %#v, want true", remote["reachable"])
+	}
+}
+
+func TestIsRemoteMachine(t *testing.T) {
+	for _, test := range []struct {
+		machineID string
+		want      bool
+	}{
+		{"", false},
+		{LocalMachineID, false},
+		{"89e249f7163208ccb82f023b8e380191", true},
+	} {
+		if got := IsRemoteMachine(test.machineID); got != test.want {
+			t.Errorf("IsRemoteMachine(%q) = %v, want %v", test.machineID, got, test.want)
+		}
+	}
+}
+
 func TestAgentsFixtureMatchesGoType(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "contracts", "fixtures", "outbound", "agents.json"))
 	if err != nil {

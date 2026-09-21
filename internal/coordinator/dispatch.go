@@ -13,6 +13,7 @@ import (
 
 	"github.com/0cv/herdr-mobile-relay/internal/activity"
 	"github.com/0cv/herdr-mobile-relay/internal/herdr"
+	"github.com/0cv/herdr-mobile-relay/internal/machineid"
 	"github.com/0cv/herdr-mobile-relay/internal/profiles"
 )
 
@@ -1099,6 +1100,9 @@ func (d *Dispatcher) readPaneForDisplay(
 
 func (d *Dispatcher) HandleReadPane(ctx context.Context, message map[string]any) map[string]any {
 	paneID := stringValue(message, "pane_id")
+	if machineID := stringValue(message, "machine_id"); machineid.IsRemote(machineID) {
+		return d.handleReadPaneMachine(ctx, machineID, paneID, message)
+	}
 	if paneID == "" {
 		return map[string]any{"type": "pane_content", "pane_id": "", "content": "", "format": "text"}
 	}
@@ -1158,6 +1162,49 @@ func (d *Dispatcher) HandleReadPane(ctx context.Context, message map[string]any)
 	response := map[string]any{
 		"type": "pane_content", "pane_id": paneID, "content": string(content),
 		"format": format, "truncated": read.Truncated, "viewport_only": terminalColumns > 0,
+		"interaction": nil, "question_layout": false,
+	}
+	if terminalRows := intValue(message["terminal_rows"], 0); terminalRows > 0 {
+		response["viewport_rows"] = terminalRows
+	}
+	return response
+}
+
+// handleReadPaneMachine reads a pane on a saved SSH machine. There is no local
+// event stream or generation for remote panes, so this is a plain CLI read that
+// mirrors the local pane_content shape with a dedicated remote error.
+func (d *Dispatcher) handleReadPaneMachine(
+	ctx context.Context,
+	machineID, paneID string,
+	message map[string]any,
+) map[string]any {
+	lines := intValue(message["lines"], 30)
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > 10000 {
+		lines = 10000
+	}
+	format := stringValue(message, "format")
+	if format != "ansi" {
+		format = "text"
+	}
+	if paneID == "" {
+		return map[string]any{"type": "pane_content", "pane_id": "", "content": "", "format": format}
+	}
+	readCtx, cancel := context.WithTimeout(ctx, commandDeadline)
+	defer cancel()
+	read, err := d.herdr.ReadPaneMachine(readCtx, machineID, paneID, lines, format, "recent-unwrapped")
+	if err != nil {
+		return map[string]any{
+			"type": "pane_content", "pane_id": paneID, "content": "", "format": format,
+			"error": "Unable to read the remote agent pane",
+		}
+	}
+	content := capPaneContentLines(read.Content, lines)
+	response := map[string]any{
+		"type": "pane_content", "pane_id": paneID, "content": string(content),
+		"format": format, "truncated": read.Truncated, "viewport_only": false,
 		"interaction": nil, "question_layout": false,
 	}
 	if terminalRows := intValue(message["terminal_rows"], 0); terminalRows > 0 {

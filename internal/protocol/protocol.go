@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/0cv/herdr-mobile-relay/internal/machineid"
 )
 
 const (
@@ -17,11 +19,23 @@ const (
 
 type TargetRef struct {
 	ServerSessionID string `json:"server_session_id"`
+	MachineID       string `json:"machine_id,omitempty"`
 	PaneID          string `json:"pane_id"`
 	TerminalID      string `json:"terminal_id"`
 	Generation      int64  `json:"generation"`
 	AgentSessionID  string `json:"agent_session_id"`
 }
+
+// LocalMachineID is the reserved machine ID for the session the relay runs
+// against directly; an empty machine ID means the same.
+const LocalMachineID = machineid.Local
+
+// IsRemoteMachine reports whether a machine ID names a saved SSH machine rather
+// than the local session. Remote machines are a read-only mirror this round.
+func IsRemoteMachine(machineID string) bool {
+	return machineid.IsRemote(machineID)
+}
+
 type ActionReceiptPhase string
 
 const (
@@ -182,6 +196,7 @@ type Inbound struct {
 	RequestID            string          `json:"request_id,omitempty"`
 	Target               *TargetRef      `json:"target,omitempty"`
 	ActionID             string          `json:"action_id,omitempty"`
+	MachineID            string          `json:"machine_id,omitempty"`
 	ServerSessionID      string          `json:"server_session_id,omitempty"`
 	SessionID            string          `json:"session_id,omitempty"`
 	PaneID               string          `json:"pane_id,omitempty"`
