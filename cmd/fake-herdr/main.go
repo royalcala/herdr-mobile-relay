@@ -69,16 +69,28 @@ type Injection struct {
 }
 
 type Scenario struct {
-	Panes      []Pane               `json:"panes"`
-	Workspaces []Workspace          `json:"workspaces,omitempty"`
-	Tabs       []Tab                `json:"tabs,omitempty"`
-	Agents     map[string]Agent     `json:"agents,omitempty"`
-	Content    map[string]string    `json:"content,omitempty"`
-	Responses  map[string]string    `json:"responses,omitempty"`
-	Injections map[string]Injection `json:"injections,omitempty"`
-	FailNext   bool                 `json:"fail_next,omitempty"`
-	HangNext   bool                 `json:"hang_next,omitempty"`
-	Sequence   uint64               `json:"sequence,omitempty"`
+	Panes            []Pane               `json:"panes"`
+	Workspaces       []Workspace          `json:"workspaces,omitempty"`
+	Tabs             []Tab                `json:"tabs,omitempty"`
+	Agents           map[string]Agent     `json:"agents,omitempty"`
+	Content          map[string]string    `json:"content,omitempty"`
+	Responses        map[string]string    `json:"responses,omitempty"`
+	Injections       map[string]Injection `json:"injections,omitempty"`
+	Machines         []MachineProfile     `json:"machines,omitempty"`
+	MachineScenarios map[string]Scenario  `json:"machine_scenarios,omitempty"`
+	FailNext         bool                 `json:"fail_next,omitempty"`
+	HangNext         bool                 `json:"hang_next,omitempty"`
+	Sequence         uint64               `json:"sequence,omitempty"`
+}
+
+// MachineProfile is one saved SSH machine for `herdr machine list --json`.
+type MachineProfile struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Target   string `json:"target,omitempty"`
+	Session  string `json:"session,omitempty"`
+	Enabled  *bool  `json:"enabled,omitempty"`
+	Selected bool   `json:"selected,omitempty"`
 }
 
 type Operation struct {
@@ -124,6 +136,10 @@ func main() {
 	if len(args) < 2 {
 		fatal("expected <group> <command> [args]")
 	}
+	machineID, commandArgs := splitMachinePrefix(args)
+	if len(commandArgs) < 2 {
+		fatal("expected <group> <command> [args]")
+	}
 
 	store, err := openStateStore()
 	if err != nil {
@@ -139,7 +155,7 @@ func main() {
 		fatal("%v", err)
 	}
 
-	key := strings.Join(args[:2], " ")
+	key := strings.Join(commandArgs[:2], " ")
 	injection := scenario.Injections[key]
 	if scenario.HangNext {
 		_, _ = store.update(func(s *Scenario) error { s.HangNext = false; return nil })
@@ -165,7 +181,7 @@ func main() {
 		waitBarrier(injection.BeforeExecuteBarrier, scenario.Sequence)
 	}
 
-	output, commandErr := execute(store, scenario, args)
+	output, commandErr := execute(store, scenario, machineID, commandArgs)
 	if injection.BeforeResponseBarrier != "" {
 		waitBarrier(injection.BeforeResponseBarrier, scenario.Sequence)
 	}
@@ -201,8 +217,77 @@ func injectionLabel(injection Injection) string {
 	}
 }
 
-func execute(store *stateStore, scenario Scenario, args []string) (string, error) {
+func splitMachinePrefix(args []string) (string, []string) {
+	if len(args) >= 2 && args[0] == "--machine" {
+		return args[1], args[2:]
+	}
+	return "", args
+}
+
+// scenarioForMachine swaps in a saved machine's inventory while keeping the
+// global injection controls, so `--machine <id> agent list` mirrors what that
+// server would report.
+func scenarioForMachine(base Scenario, machineID string) Scenario {
+	nested, ok := base.MachineScenarios[machineID]
+	if !ok {
+		nested = Scenario{}
+	}
+	result := base
+	result.Panes = nested.Panes
+	result.Workspaces = nested.Workspaces
+	result.Tabs = nested.Tabs
+	result.Agents = nested.Agents
+	result.Content = nested.Content
+	if nested.Responses != nil {
+		result.Responses = nested.Responses
+	}
+	return result
+}
+
+// machineListOutput mirrors `herdr machine list --json`: a bare JSON array, not
+// the {"result": ...} envelope the API commands use.
+func machineListOutput(scenario Scenario) (string, error) {
+	type wire struct {
+		ID       string `json:"id"`
+		Label    string `json:"label"`
+		Target   string `json:"target"`
+		Session  string `json:"session"`
+		Enabled  bool   `json:"enabled"`
+		Selected bool   `json:"selected"`
+	}
+	out := make([]wire, 0, len(scenario.Machines))
+	for _, machine := range scenario.Machines {
+		enabled := true
+		if machine.Enabled != nil {
+			enabled = *machine.Enabled
+		}
+		session := machine.Session
+		if session == "" {
+			session = "default"
+		}
+		out = append(out, wire{
+			ID: machine.ID, Label: machine.Label, Target: machine.Target,
+			Session: session, Enabled: enabled, Selected: machine.Selected,
+		})
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func execute(store *stateStore, scenario Scenario, machineID string, args []string) (string, error) {
 	group, command, rest := args[0], args[1], args[2:]
+	if group == "machine" && command == "list" {
+		if err := exactLen(rest, 1); err != nil || rest[0] != "--json" {
+			return "", errors.New("usage: herdr machine list [OPTIONS]")
+		}
+		return machineListOutput(scenario)
+	}
+	if machineID != "" {
+		scenario = scenarioForMachine(scenario, machineID)
+	}
 	if raw, ok := scenario.Responses[strings.Join(args, "\x00")]; ok {
 		return raw, nil
 	}
