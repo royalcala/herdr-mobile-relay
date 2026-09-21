@@ -237,6 +237,7 @@ type Pane struct {
 
 type Workspace struct {
 	ID          string             `json:"workspace_id"`
+	MachineID   string             `json:"machine_id,omitempty"`
 	Number      int                `json:"number"`
 	Label       string             `json:"label"`
 	Focused     bool               `json:"focused"`

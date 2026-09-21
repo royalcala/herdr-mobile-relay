@@ -18,6 +18,8 @@ import (
 type AgentState struct {
 	PaneID                       string                 `json:"pane_id"`
 	RawPaneID                    string                 `json:"raw_pane_id"`
+	MachineID                    string                 `json:"machine_id,omitempty"`
+	Remote                       bool                   `json:"remote,omitempty"`
 	TerminalID                   string                 `json:"terminal_id"`
 	ServerSessionID              string                 `json:"server_session_id,omitempty"`
 	Generation                   int64                  `json:"generation"`
