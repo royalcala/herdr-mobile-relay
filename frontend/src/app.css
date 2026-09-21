@@ -668,6 +668,10 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .term-content mark.terminal-find-match.active { background: #ff8a4c; box-shadow: 0 0 0 1px #fff6; color: #160a04; }
 .term-wrap { display: flex; flex: 1 1 auto; min-height: 0; position: relative; }
 .jump-bottom { background: var(--primary); border: 0; border-radius: 50%; bottom: .9rem; color: var(--primary-foreground); height: 2.5rem; position: absolute; right: 1rem; width: 2.5rem; }
+/* Bottom-left so it never fights the contextual jump-to-latest button above on
+   the right, and it stays put while the key row is hidden. */
+.controls-toggle { align-items: center; background: var(--primary); border: 0; border-radius: 50%; bottom: .9rem; color: var(--primary-foreground); display: inline-flex; height: 2.5rem; justify-content: center; left: 1rem; position: absolute; width: 2.5rem; }
+.controls-toggle svg { height: 1.15rem; width: 1.15rem; }
 .terminal-bottom { background: var(--background); border-top: 1px solid var(--border); flex: 0 0 auto; padding-bottom: env(safe-area-inset-bottom); position: relative; }
 .term-input { align-items: flex-end; display: flex; gap: .45rem; padding: .55rem; }
 .composer-field { background: var(--input); border: 1px solid var(--border); border-radius: .68rem; display: flex; flex: 1; min-width: 0; position: relative; }
@@ -718,10 +722,14 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .upload-status { color: var(--success); font-size: .7rem; margin: -.2rem .75rem .45rem; }
 .quick-actions { border-top: 1px solid var(--border); padding: .55rem; }
 .quick-actions .button { flex: 1; }
-.term-keys { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .35rem; padding: .4rem .55rem; }
+/* Wraps instead of clipping: on narrow portrait lines the trailing group drops
+   to a second line so Esc, the Modifier keys and Enter all stay reachable. Wide
+   lines keep the single row, with the trailing group pushed to the right. */
+.term-keys { align-items: center; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: .35rem; padding: .4rem max(.55rem, env(safe-area-inset-right)) .4rem max(.55rem, env(safe-area-inset-left)); }
 .key-feedback { background: color-mix(in srgb, var(--primary) 10%, var(--background)); border-top: 1px solid var(--border); color: var(--muted); font-size: .66rem; margin: 0; min-height: 1.55rem; padding: .35rem .65rem; }
 .key-feedback.error { color: var(--danger); }
-.term-keys .spacer { flex: 1; }
+.key-group { align-items: center; display: flex; gap: .35rem; }
+.key-group.trailing { margin-inline-start: auto; }
 .modifier-menu, .arrow-menu, .fkey-menu { position: relative; }
 .modifier-key-input { border: 0; height: 1px; left: 50%; opacity: 0; padding: 0; pointer-events: none; position: absolute; width: 1px; }
 .modifier-menu .button[aria-pressed='true'] { background: var(--primary); color: var(--primary-foreground); }

@@ -10,6 +10,7 @@ import {
   TERMINAL_HISTORY_KEY,
   TERMINAL_HISTORY_OPTIONS,
   TERMINAL_HEIGHT_LEASE_KEY,
+  TERMINAL_KEY_CONTROLS_KEY,
   TERMINAL_WAKE_LOCK_KEY,
   TERMINAL_REFRESH_KEY,
   TERMINAL_REFRESH_OPTIONS,
@@ -85,6 +86,12 @@ function savedTerminalRefreshInterval(): TerminalRefreshInterval {
     : 250;
 }
 
+// Visible by default: the key row is where Enter lives, so hiding it is an
+// explicit opt-in that only persists the decision to keep it out of the way.
+function savedTerminalKeyControls(): boolean {
+  return localStorage.getItem(TERMINAL_KEY_CONTROLS_KEY) !== 'hidden';
+}
+
 // Mixed by default: one card per workspace with a state dot reads better than
 // three state sections once workspaces carry worktrees, and agents needing
 // input stay on top in both layouts.
@@ -111,6 +118,7 @@ export const terminalHeightLease = writable<boolean>(
 export const terminalWakeLock = writable<boolean>(
   localStorage.getItem(TERMINAL_WAKE_LOCK_KEY) === 'true',
 );
+export const terminalKeyControls = writable<boolean>(savedTerminalKeyControls());
 
 function applyTheme(value: Theme): void {
   document.documentElement.dataset.theme = value;
@@ -204,6 +212,11 @@ export function setTerminalHeightLease(value: boolean): void {
 export function setTerminalWakeLock(value: boolean): void {
   localStorage.setItem(TERMINAL_WAKE_LOCK_KEY, String(value));
   terminalWakeLock.set(value);
+}
+
+export function setTerminalKeyControls(value: boolean): void {
+  localStorage.setItem(TERMINAL_KEY_CONTROLS_KEY, value ? 'shown' : 'hidden');
+  terminalKeyControls.set(value);
 }
 
 

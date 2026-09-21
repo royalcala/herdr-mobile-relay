@@ -11,6 +11,7 @@ export const TERMINAL_HISTORY_KEY = 'herdr_terminal_history_lines';
 export const TERMINAL_REFRESH_KEY = 'herdr_terminal_refresh_ms';
 export const TERMINAL_HEIGHT_LEASE_KEY = 'herdr_terminal_height_lease';
 export const TERMINAL_WAKE_LOCK_KEY = 'herdr_terminal_wake_lock';
+export const TERMINAL_KEY_CONTROLS_KEY = 'herdr_terminal_key_controls';
 export const HOME_LAYOUT_KEY = 'herdr_home_workspace_layout';
 export const DEVICE_LOCK_KEY = 'herdr_require_device_unlock';
 export const DEVICE_CREDENTIAL_KEY = 'herdr_device_unlock_credential';

@@ -37,7 +37,7 @@
     speechState,
     stopSpeech,
   } from '$lib/speech';
-  import { interfaceSize, terminalHeightLease, theme } from '$lib/preferences';
+  import { interfaceSize, setTerminalKeyControls, terminalHeightLease, terminalKeyControls, theme } from '$lib/preferences';
   import { replaceView } from '$lib/router';
   import { targetRefForAgent } from '$lib/resource-id';
   import { securityState } from '$lib/security';
@@ -1992,6 +1992,12 @@
     <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"></path>
   </svg>
 {/snippet}
+{#snippet keyboardIcon()}
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    <rect x="2" y="5" width="20" height="14" rx="2"></rect>
+    <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M9 13h6"></path>
+  </svg>
+{/snippet}
 {#snippet findPreviousIcon()}
   <svg class="find-action-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
     <path d="m6 15 6-6 6 6"></path>
@@ -2060,20 +2066,21 @@
     <div class="term-keys question-term-keys" aria-label="Terminal fallback keys" aria-busy={keySending}>
       <Button variant="secondary" size="sm" onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
       <Button variant="secondary" size="sm" aria-label="Tab" title="Send Tab" onclick={sendTab}>{@render tabIcon()}</Button>
-      <span class="spacer"></span>
-      <div class="fkey-menu">
-        <Button variant="secondary" size="sm" aria-label="Function keys" aria-expanded={fkeysOpen} onclick={() => { fkeysOpen = !fkeysOpen; arrowsOpen = false; }}>
-          F keys
-        </Button>
-        {@render fkeyPopup()}
+      <div class="key-group trailing">
+        <div class="fkey-menu">
+          <Button variant="secondary" size="sm" aria-label="Function keys" aria-expanded={fkeysOpen} onclick={() => { fkeysOpen = !fkeysOpen; arrowsOpen = false; }}>
+            F keys
+          </Button>
+          {@render fkeyPopup()}
+        </div>
+        <div class="arrow-menu">
+          <Button variant="secondary" size="sm" aria-label="Arrow keys" aria-expanded={arrowsOpen} onclick={() => { arrowsOpen = !arrowsOpen; fkeysOpen = false; }}>
+            {@render arrowIcon()}
+          </Button>
+          {@render arrowPopup()}
+        </div>
+        <Button variant="secondary" size="sm" aria-label="Enter" onclick={() => sendTerminalKey('Enter')}>Enter</Button>
       </div>
-      <div class="arrow-menu">
-        <Button variant="secondary" size="sm" aria-label="Arrow keys" aria-expanded={arrowsOpen} onclick={() => { arrowsOpen = !arrowsOpen; fkeysOpen = false; }}>
-          {@render arrowIcon()}
-        </Button>
-        {@render arrowPopup()}
-      </div>
-      <Button variant="secondary" size="sm" aria-label="Enter" onclick={() => sendTerminalKey('Enter')}>Enter</Button>
     </div>
   {/if}
   <div class:hidden={questionMode} class="terminal-view term">
@@ -2140,6 +2147,15 @@
   </div>
     {#if jumpVisible}
       <button class="jump-bottom" aria-label="Jump to latest" onclick={jumpToBottom}>↓</button>
+    {/if}
+    {#if !readOnly}
+      <button
+        class="controls-toggle"
+        aria-label={$terminalKeyControls ? 'Hide key controls' : 'Show key controls'}
+        aria-expanded={$terminalKeyControls}
+        title={$terminalKeyControls ? 'Hide key controls' : 'Show key controls'}
+        onclick={() => setTerminalKeyControls(!$terminalKeyControls)}
+      >{@render keyboardIcon()}</button>
     {/if}
   </div>
   <textarea
@@ -2384,86 +2400,89 @@
     {#if keyControlStatus}
       <p class:error={keyFeedbackError} class="key-feedback" role="status" aria-live="polite">{keyControlStatus}</p>
     {/if}
-    <div class="term-keys" aria-busy={keySending}>
-      <Button variant="secondary" size="sm" disabled={readOnly || keySending} onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
-      <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Tab" title="Send Tab" onpointerdown={(event) => event.preventDefault()} onclick={sendTab}>{@render tabIcon()}</Button>
-      <div class="modifier-menu">
-        <input
-          id="modifier-key-input"
-          class="modifier-key-input"
-          bind:this={modifierInputElement}
-          disabled={readOnly}
-          aria-label="Modifier shortcut character"
-          autocomplete="off"
-          autocapitalize="none"
-          maxlength="1"
-          spellcheck="false"
-          oninput={modifierInput}
-          onkeydown={modifierKeydown}
-          onblur={modifierBlur}
-        />
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={readOnly || keySending}
-          aria-controls="modifier-key-input"
-          aria-pressed={shiftArmed}
-          aria-label="Shift"
-          title="Arm Shift; combine it with Ctrl or Alt"
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={toggleShift}
-        >{@render shiftIcon()}</Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={readOnly || keySending}
-          aria-controls="modifier-key-input"
-          aria-pressed={ctrlArmed}
-          aria-label="Ctrl"
-          title="Arm Ctrl; combine it with Shift or Alt"
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={toggleCtrl}
-        ><span class="key-caret">^</span></Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={readOnly || keySending}
-          aria-controls="modifier-key-input"
-          aria-pressed={altArmed}
-          title="Arm Alt; combine it with Ctrl or Shift"
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={toggleAlt}
-        >Alt</Button>
+    {#if $terminalKeyControls}
+      <div class="term-keys" aria-busy={keySending}>
+        <Button variant="secondary" size="sm" disabled={readOnly || keySending} onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
+        <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Tab" title="Send Tab" onpointerdown={(event) => event.preventDefault()} onclick={sendTab}>{@render tabIcon()}</Button>
+        <div class="modifier-menu">
+          <input
+            id="modifier-key-input"
+            class="modifier-key-input"
+            bind:this={modifierInputElement}
+            disabled={readOnly}
+            aria-label="Modifier shortcut character"
+            autocomplete="off"
+            autocapitalize="none"
+            maxlength="1"
+            spellcheck="false"
+            oninput={modifierInput}
+            onkeydown={modifierKeydown}
+            onblur={modifierBlur}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={readOnly || keySending}
+            aria-controls="modifier-key-input"
+            aria-pressed={shiftArmed}
+            aria-label="Shift"
+            title="Arm Shift; combine it with Ctrl or Alt"
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={toggleShift}
+          >{@render shiftIcon()}</Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={readOnly || keySending}
+            aria-controls="modifier-key-input"
+            aria-pressed={ctrlArmed}
+            aria-label="Ctrl"
+            title="Arm Ctrl; combine it with Shift or Alt"
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={toggleCtrl}
+          ><span class="key-caret">^</span></Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={readOnly || keySending}
+            aria-controls="modifier-key-input"
+            aria-pressed={altArmed}
+            title="Arm Alt; combine it with Ctrl or Shift"
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={toggleAlt}
+          >Alt</Button>
+        </div>
+        <div class="key-group trailing">
+          <div class="fkey-menu">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={readOnly || keySending}
+              aria-label="Function keys"
+              aria-expanded={fkeysOpen}
+              onpointerdown={(event) => event.preventDefault()}
+              onclick={() => { fkeysOpen = !fkeysOpen; arrowsOpen = false; }}
+            >F keys</Button>
+            {@render fkeyPopup()}
+          </div>
+          <div class="arrow-menu">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={readOnly || keySending}
+              aria-label="Arrow keys"
+              aria-expanded={arrowsOpen}
+              onpointerdown={(event) => event.preventDefault()}
+              onclick={() => { arrowsOpen = !arrowsOpen; fkeysOpen = false; }}
+            >
+              {@render arrowIcon()}
+            </Button>
+            {@render arrowPopup()}
+          </div>
+          <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Enter" onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Enter')}>Enter</Button>
+        </div>
       </div>
-      <span class="spacer"></span>
-      <div class="fkey-menu">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={readOnly || keySending}
-          aria-label="Function keys"
-          aria-expanded={fkeysOpen}
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={() => { fkeysOpen = !fkeysOpen; arrowsOpen = false; }}
-        >F keys</Button>
-        {@render fkeyPopup()}
-      </div>
-      <div class="arrow-menu">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={readOnly || keySending}
-          aria-label="Arrow keys"
-          aria-expanded={arrowsOpen}
-          onpointerdown={(event) => event.preventDefault()}
-          onclick={() => { arrowsOpen = !arrowsOpen; fkeysOpen = false; }}
-        >
-          {@render arrowIcon()}
-        </Button>
-        {@render arrowPopup()}
-      </div>
-      <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Enter" onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Enter')}>Enter</Button>
-    </div>
+    {/if}
   </div>
 </div>
 </main>
