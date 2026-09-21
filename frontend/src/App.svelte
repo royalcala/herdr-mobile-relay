@@ -28,6 +28,7 @@
     approvalPromptPreview,
     displayName,
     hostLabel,
+    isRemoteAgent,
   } from '$lib/agents';
   import { APP_ASSET_VERSION, APP_BUILD_ID, APP_VERSION } from '$lib/config';
   import {
@@ -64,6 +65,7 @@
   const relays = relayStore.relayConfigs;
   const connections = relayStore.connections;
   const agents = relayStore.agents;
+  const machines = relayStore.machines;
   const workspaces = relayStore.workspaces;
   const activities = relayStore.activities;
   const frames = relayStore.terminalFrames;
@@ -99,6 +101,7 @@
   const activeReadOnly = $derived(Boolean(
     activeAgent && relayStore.deviceCredential(activeAgent.relay_id)?.role === 'reader',
   ));
+  const machinesList = $derived([...$machines.values()].flat());
   const readOnlyRelayIds = $derived.by(() => {
     void $connections;
     return new Set($relays
@@ -725,8 +728,8 @@
   {:else if $currentView.view === 'terminal' && activeAgent}
     {#key activeAgent.pane_id}
       <div class="terminal-layout">
-        <AgentRail agents={$agents} active={activeAgent} onopen={openAgent} onjump={() => { jumpOpen = true; }} />
-        <TerminalView bind:this={terminalView} agent={activeAgent} allAgents={$agents} frame={$frames.get(activeAgent.pane_id)} responding={$responding} readOnly={activeReadOnly} />
+        <AgentRail agents={$agents} machines={machinesList} active={activeAgent} onopen={openAgent} onjump={() => { jumpOpen = true; }} />
+        <TerminalView bind:this={terminalView} agent={activeAgent} allAgents={$agents} frame={$frames.get(activeAgent.pane_id)} responding={$responding} readOnly={activeReadOnly || isRemoteAgent(activeAgent)} />
       </div>
     {/key}
   {:else if $currentView.view === 'terminal'}

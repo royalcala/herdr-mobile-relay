@@ -10,6 +10,7 @@
     MIN_PANE_SIZE_ROWS,
     paneLeaseRenewalAllowed,
   } from '$lib/config';
+  import { isRemoteAgent } from '$lib/agents';
   import {
     agentNeedsInspection,
     agentNeedsResponse,
@@ -2056,7 +2057,9 @@
   aria-label={`${questionMode ? 'Questions' : 'Terminal'} for ${agent.project || agent.name || agent.agent || 'agent'}`}
 >
   {#if readOnly}
-    <p class="key-feedback" role="status">Reader access is read only. Use a controller device to send input or answer prompts.</p>
+    <p class="key-feedback" role="status">{isRemoteAgent(agent)
+      ? 'Remote machine · read only. Other machines are mirrored for reading this round.'
+      : 'Reader access is read only. Use a controller device to send input or answer prompts.'}</p>
   {/if}
   {#if questionMode && interaction}
     <QuestionForm {agent} {interaction} responding={responding.has(agent.pane_id)} />

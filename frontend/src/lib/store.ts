@@ -101,6 +101,7 @@ import type {
   QuestionDraft,
   QuestionInteraction,
   HerdrStatus,
+  Machine,
   RelayConfig,
   RelayConnectionView,
   RelaySpeechVoice,
@@ -410,6 +411,21 @@ function normalizeAgentTargetFields(agent: Partial<Agent>): Partial<Agent> {
   };
 }
 
+function normalizeMachine(value: Record<string, unknown>): Machine | null {
+  const machineId = String(value.machine_id || '');
+  if (!machineId) return null;
+  return {
+    machine_id: machineId,
+    label: String(value.label || machineId),
+    host: String(value.host || ''),
+    local: value.local === true,
+    reachable: value.reachable !== false,
+    error: String(value.error || ''),
+    agent_count: Number(value.agent_count) || 0,
+    workspace_count: Number(value.workspace_count) || 0,
+  };
+}
+
 function normalizeWorkspace(
   relayId: string,
   relayLabel: string,
@@ -423,6 +439,7 @@ function normalizeWorkspace(
   return {
     relay_id: relayId,
     relay_label: relayLabel,
+    machine_id: String(value.machine_id || '') || undefined,
     workspace_id: workspaceId,
     number: Number(value.number) || 0,
     label: String(value.label || 'Workspace').slice(0, 256),
@@ -534,6 +551,7 @@ class RelayStore {
   readonly connections = writable<Map<string, RelayConnection>>(new Map());
   readonly agents = writable<Agent[]>([]);
   readonly workspaces = writable<RelayWorkspace[]>([]);
+  readonly machines = writable<Map<string, Machine[]>>(new Map());
   readonly activities = writable<Activity[]>([]);
   readonly terminalFrames = writable<Map<string, TerminalFrame>>(new Map());
   readonly responding = writable<Set<string>>(new Set());
@@ -546,6 +564,7 @@ class RelayStore {
   private connectionsValue = new Map<string, RelayConnection>();
   private agentsValue: Agent[] = [];
   private workspacesValue: RelayWorkspace[] = [];
+  private machinesValue = new Map<string, Machine[]>();
   private activitiesValue: Activity[] = [];
   private terminalFramesValue = new Map<string, TerminalFrame>();
   private respondingValue = new Set<string>();
@@ -1413,6 +1432,17 @@ class RelayStore {
     }
     if (message.type === 'activity' && message.activity) {
       this.upsertActivity(relayId, message.activity);
+      return;
+    }
+    if (message.type === 'machines') {
+      const incoming = (Array.isArray(message.machines) ? message.machines : [])
+        .map((machine: unknown) => machine && typeof machine === 'object'
+          ? normalizeMachine(machine as Record<string, unknown>)
+          : null)
+        .filter((machine: Machine | null): machine is Machine => machine !== null);
+      this.machinesValue = new Map(this.machinesValue);
+      this.machinesValue.set(relayId, incoming);
+      this.machines.set(this.machinesValue);
       return;
     }
     if (message.type === 'workspaces') {

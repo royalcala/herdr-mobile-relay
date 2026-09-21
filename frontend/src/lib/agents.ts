@@ -168,8 +168,19 @@ export function questionInteraction(agent: Partial<Agent> | null | undefined): Q
   return interaction;
 }
 
-export function clientPaneId(relayId: string, rawPaneId: string): string {
-  return `${relayId}::${rawPaneId}`;
+// Machine IDs are per-server: two saved machines can both host `w1:p1`, so a
+// remote pane's client key carries its machine between relay and raw pane. The
+// local machine keeps the original two-segment key so existing links,
+// notifications, and stored references stay valid.
+export function clientPaneId(relayId: string, rawPaneId: string, machineId = ''): string {
+  return machineId && machineId !== 'local'
+    ? `${relayId}::${machineId}::${rawPaneId}`
+    : `${relayId}::${rawPaneId}`;
+}
+
+export function isRemoteAgent(agent: Partial<Agent> | null | undefined): boolean {
+  const machineId = String(agent?.machine_id || '');
+  return agent?.remote === true || (machineId !== '' && machineId !== 'local');
 }
 
 export function normalizeAgent(
@@ -179,12 +190,14 @@ export function normalizeAgent(
   attentionCapable = false,
 ): Agent {
   const rawPaneId = String(agent.raw_pane_id || agent.pane_id || '');
+  const machineId = String(agent.machine_id || '');
   return normalizeAgentAttention({
     ...agent,
     relay_id: relayId,
     relay_label: relayLabel,
+    machine_id: machineId || undefined,
     raw_pane_id: rawPaneId,
-    pane_id: clientPaneId(relayId, rawPaneId),
+    pane_id: clientPaneId(relayId, rawPaneId, machineId),
   } as Agent, attentionCapable);
 }
 

@@ -7,7 +7,7 @@ import {
   sortedAgents,
   tabName,
 } from './agents';
-import type { Agent, RelayWorkspace, WorkspaceWorktree } from './types';
+import type { Agent, Machine, RelayWorkspace, WorkspaceWorktree } from './types';
 
 export interface WorkspaceTab {
   id: string;
@@ -21,6 +21,7 @@ export interface WorkspaceGroup {
   key: string;
   relayId: string;
   relayLabel: string;
+  machineId: string;
   workspaceId: string;
   label: string;
   number: number;
@@ -98,7 +99,7 @@ export function homeRelativePath(path: string, home: string): string {
 
 export function workspaceIdentity(agent: Agent): string {
   const identity = String(agent.workspace_id || agent.cwd || agent.raw_pane_id || agent.pane_id);
-  return `${agent.relay_id}\u0000${identity}`;
+  return `${agent.relay_id}\u0000${agent.machine_id || ''}\u0000${identity}`;
 }
 
 function groupLabel(agents: Agent[]): string {
@@ -119,7 +120,7 @@ function groupCwd(agents: Agent[]): string {
 export function workspaceGroups(agents: Agent[], workspaces: RelayWorkspace[] = []): WorkspaceGroup[] {
   const grouped = new Map<string, { agents: Agent[]; workspace: RelayWorkspace | null }>();
   for (const workspace of workspaces) {
-    const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
+    const key = `${workspace.relay_id}\u0000${workspace.machine_id || ''}\u0000${workspace.workspace_id}`;
     grouped.set(key, { agents: [], workspace });
   }
   for (const agent of agents) {
@@ -155,7 +156,8 @@ export function workspaceGroups(agents: Agent[], workspaces: RelayWorkspace[] = 
       key,
       relayId: workspace?.relay_id || first?.relay_id || '',
       relayLabel: workspace?.relay_label || first?.relay_label || '',
-      workspaceId: workspace?.workspace_id || key.slice(key.indexOf('\u0000') + 1),
+      machineId: workspace?.machine_id || first?.machine_id || '',
+      workspaceId: workspace?.workspace_id || key.slice(key.lastIndexOf('\u0000') + 1),
       number: workspace?.number || Number.MAX_SAFE_INTEGER,
       label: workspace?.label || groupLabel(ordered),
       cwd: workspace?.cwd || groupCwd(ordered),
@@ -183,11 +185,13 @@ export function workspaceGroups(agents: Agent[], workspaces: RelayWorkspace[] = 
 }
 
 export function relayWorkspaceTrees(workspaces: RelayWorkspace[]): RelayWorkspaceTree[] {
+  const identity = (workspace: RelayWorkspace): string =>
+    `${workspace.relay_id}\u0000${workspace.machine_id || ''}\u0000${workspace.workspace_id}`;
   const parentByRepo = new Map<string, RelayWorkspace>();
   for (const workspace of workspaces) {
     const worktree = workspace.worktree;
     if (worktree && !worktree.is_linked_worktree && worktree.repo_key) {
-      parentByRepo.set(`${workspace.relay_id}\u0000${worktree.repo_key}`, workspace);
+      parentByRepo.set(`${workspace.relay_id}\u0000${workspace.machine_id || ''}\u0000${worktree.repo_key}`, workspace);
     }
   }
   const children = new Map<string, RelayWorkspace[]>();
@@ -195,16 +199,16 @@ export function relayWorkspaceTrees(workspaces: RelayWorkspace[]): RelayWorkspac
   for (const workspace of workspaces) {
     const worktree = workspace.worktree;
     if (!worktree?.is_linked_worktree || !worktree.repo_key) continue;
-    const parent = parentByRepo.get(`${workspace.relay_id}\u0000${worktree.repo_key}`);
+    const parent = parentByRepo.get(`${workspace.relay_id}\u0000${workspace.machine_id || ''}\u0000${worktree.repo_key}`);
     if (!parent || parent.workspace_id === workspace.workspace_id) continue;
-    const key = `${parent.relay_id}\u0000${parent.workspace_id}`;
+    const key = identity(parent);
     children.set(key, [...(children.get(key) || []), workspace]);
-    childIDs.add(`${workspace.relay_id}\u0000${workspace.workspace_id}`);
+    childIDs.add(identity(workspace));
   }
   return workspaces
-    .filter((workspace) => !childIDs.has(`${workspace.relay_id}\u0000${workspace.workspace_id}`))
+    .filter((workspace) => !childIDs.has(identity(workspace)))
     .map((workspace) => {
-      const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
+      const key = identity(workspace);
       const nested = (children.get(key) || []).sort((left, right) =>
         left.number - right.number || left.label.localeCompare(right.label));
       return {
@@ -216,9 +220,12 @@ export function relayWorkspaceTrees(workspaces: RelayWorkspace[]): RelayWorkspac
 }
 
 export function workspaceGroupTrees(groups: WorkspaceGroup[]): WorkspaceGroupTree[] {
+  const groupKey = (group: { relayId: string; machineId: string; workspaceId: string }): string =>
+    `${group.relayId}\u0000${group.machineId || ''}\u0000${group.workspaceId}`;
   const workspaces = groups.map((group): RelayWorkspace => ({
     relay_id: group.relayId,
     relay_label: group.relayLabel,
+    machine_id: group.machineId || undefined,
     workspace_id: group.workspaceId,
     number: group.number,
     label: group.label,
@@ -230,14 +237,19 @@ export function workspaceGroupTrees(groups: WorkspaceGroup[]): WorkspaceGroupTre
     cwd: group.cwd,
     worktree: group.worktree,
   }));
-  const groupByID = new Map(groups.map((group) => [
-    `${group.relayId}\u0000${group.workspaceId}`,
-    group,
-  ]));
+  const groupByID = new Map(groups.map((group) => [groupKey(group), group]));
   return relayWorkspaceTrees(workspaces).map((tree) => {
-    const workspace = groupByID.get(`${tree.workspace.relay_id}\u0000${tree.workspace.workspace_id}`)!;
+    const workspace = groupByID.get(groupKey({
+      relayId: tree.workspace.relay_id,
+      machineId: tree.workspace.machine_id || '',
+      workspaceId: tree.workspace.workspace_id,
+    }))!;
     const children = tree.children
-      .map((child) => groupByID.get(`${child.relay_id}\u0000${child.workspace_id}`))
+      .map((child) => groupByID.get(groupKey({
+        relayId: child.relay_id,
+        machineId: child.machine_id || '',
+        workspaceId: child.workspace_id,
+      })))
       .filter((child): child is WorkspaceGroup => Boolean(child));
     const all = [workspace, ...children];
     return {
@@ -306,4 +318,126 @@ export function agentSearchText(agent: Agent): string {
     hostLabel(agent),
     agent.relay_label,
   ].join(' ').toLocaleLowerCase();
+}
+
+export interface MachineGroup {
+  key: string;
+  relayId: string;
+  relayLabel: string;
+  machineId: string;
+  label: string;
+  host: string;
+  local: boolean;
+  reachable: boolean;
+  error: string;
+  trees: WorkspaceGroupTree[];
+  attentionCount: number;
+  workingCount: number;
+  agentCount: number;
+}
+
+/**
+ * Buckets workspace trees by machine so the sidebar reads like the desktop
+ * panel: one group per machine, the local one first, each keeping its own
+ * workspaces. Machine IDs are scoped to a server, so the bucket key carries
+ * both the relay and the machine.
+ */
+export function machineGroups(
+  trees: WorkspaceGroupTree[],
+  machines: Machine[] = [],
+): MachineGroup[] {
+  const meta = new Map<string, Machine>();
+  for (const machine of machines) meta.set(machine.machine_id, machine);
+  const grouped = new Map<string, MachineGroup>();
+  for (const tree of trees) {
+    const group = tree.workspace;
+    const machineId = group.machineId || '';
+    const key = `${group.relayId}\u0000${machineId}`;
+    let bucket = grouped.get(key);
+    if (!bucket) {
+      const machine = meta.get(machineId);
+      const local = machineId === '' || machineId === 'local';
+      bucket = {
+        key,
+        relayId: group.relayId,
+        relayLabel: group.relayLabel,
+        machineId,
+        label: machine?.label || group.relayLabel || machineId || 'relay',
+        host: machine?.host || group.host,
+        local,
+        reachable: machine ? machine.reachable !== false : true,
+        error: machine?.error || '',
+        trees: [],
+        attentionCount: 0,
+        workingCount: 0,
+        agentCount: 0,
+      };
+      grouped.set(key, bucket);
+    }
+    bucket.trees.push(tree);
+    bucket.attentionCount += tree.aggregate.attentionCount;
+    bucket.workingCount += tree.aggregate.workingCount;
+    bucket.agentCount += tree.aggregate.agents.length;
+  }
+  return [...grouped.values()].sort((left, right) =>
+    Number(right.local) - Number(left.local)
+    || left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }));
+}
+
+export interface MachineWorkspaceBucket {
+  key: string;
+  relayId: string;
+  relayLabel: string;
+  machineId: string;
+  label: string;
+  host: string;
+  local: boolean;
+  reachable: boolean;
+  error: string;
+  groups: WorkspaceGroup[];
+  attentionCount: number;
+  workingCount: number;
+  agentCount: number;
+}
+
+/** The flat-list twin of machineGroups, for surfaces that never build trees. */
+export function machineWorkspaceBuckets(
+  groups: WorkspaceGroup[],
+  machines: Machine[] = [],
+): MachineWorkspaceBucket[] {
+  const meta = new Map<string, Machine>();
+  for (const machine of machines) meta.set(machine.machine_id, machine);
+  const grouped = new Map<string, MachineWorkspaceBucket>();
+  for (const group of groups) {
+    const machineId = group.machineId || '';
+    const key = `${group.relayId}\u0000${machineId}`;
+    let bucket = grouped.get(key);
+    if (!bucket) {
+      const machine = meta.get(machineId);
+      const local = machineId === '' || machineId === 'local';
+      bucket = {
+        key,
+        relayId: group.relayId,
+        relayLabel: group.relayLabel,
+        machineId,
+        label: machine?.label || group.relayLabel || machineId || 'relay',
+        host: machine?.host || group.host,
+        local,
+        reachable: machine ? machine.reachable !== false : true,
+        error: machine?.error || '',
+        groups: [],
+        attentionCount: 0,
+        workingCount: 0,
+        agentCount: 0,
+      };
+      grouped.set(key, bucket);
+    }
+    bucket.groups.push(group);
+    bucket.attentionCount += group.attentionCount;
+    bucket.workingCount += group.workingCount;
+    bucket.agentCount += group.agents.length;
+  }
+  return [...grouped.values()].sort((left, right) =>
+    Number(right.local) - Number(left.local)
+    || left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }));
 }

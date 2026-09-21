@@ -5,6 +5,7 @@ export type AttentionKind = 'approval' | 'question' | 'chat' | 'unknown';
 
 export interface TargetRef {
   server_session_id: string;
+  machine_id?: string;
   pane_id: string;
   terminal_id: string;
   generation: number;
@@ -13,6 +14,18 @@ export interface TargetRef {
 
 export interface FrontendTargetRef extends TargetRef {
   relay_id: string;
+}
+
+/** A saved Herdr machine (SSH profile) the relay mirrors read-only. */
+export interface Machine {
+  machine_id: string;
+  label: string;
+  host?: string;
+  local?: boolean;
+  reachable?: boolean;
+  error?: string;
+  agent_count?: number;
+  workspace_count?: number;
 }
 
 
@@ -132,6 +145,7 @@ export interface WorkspaceWorktree {
 export interface RelayWorkspace {
   relay_id: string;
   relay_label: string;
+  machine_id?: string;
   workspace_id: string;
   number: number;
   label: string;
@@ -266,6 +280,8 @@ export interface QuestionInteraction {
 export interface Agent {
   relay_id: string;
   relay_label: string;
+  machine_id?: string;
+  remote?: boolean;
   raw_pane_id: string;
   pane_id: string;
   agent?: string;

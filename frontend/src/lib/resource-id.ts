@@ -4,7 +4,7 @@ const ROUTE_PREFIX = 'r3.';
 const ID_PATTERN = /^[A-Za-z0-9._:@%+-]{1,160}$/u;
 const TARGET_TUPLE_LENGTH = 7;
 
-type TargetTuple = [3, string, string, string, string, number, string];
+type TargetTuple = [3, string, string, string, string, number, string, string?];
 
 export function isResourceId(value: unknown): value is string {
   return typeof value === 'string' && ID_PATTERN.test(value);
@@ -26,6 +26,8 @@ function normalizedTarget(value: unknown, frontend = false): TargetRef | Fronten
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
   if (frontend && !isResourceId(candidate.relay_id)) return null;
+  const machineId = typeof candidate.machine_id === 'string' ? candidate.machine_id : '';
+  if (machineId && !isResourceId(machineId)) return null;
   if (!isResourceId(candidate.server_session_id)
     || !isResourceId(candidate.pane_id)
     || !isResourceId(candidate.terminal_id)
@@ -36,6 +38,7 @@ function normalizedTarget(value: unknown, frontend = false): TargetRef | Fronten
   return {
     ...(frontend ? { relay_id: candidate.relay_id as string } : {}),
     server_session_id: candidate.server_session_id,
+    ...(machineId ? { machine_id: machineId } : {}),
     pane_id: candidate.pane_id,
     terminal_id: candidate.terminal_id,
     generation: candidate.generation,
@@ -55,6 +58,7 @@ export function targetRefForAgent(agent: Partial<Agent>): FrontendTargetRef | nu
   return normalizeFrontendTargetRef({
     relay_id: agent.relay_id,
     server_session_id: agent.server_session_id,
+    machine_id: agent.machine_id,
     pane_id: agent.raw_pane_id,
     terminal_id: agent.terminal_id,
     generation: agent.generation,
@@ -68,6 +72,7 @@ export function targetRefMatchesAgent(target: FrontendTargetRef, agent: Partial<
     && current
     && normalized.relay_id === current.relay_id
     && normalized.server_session_id === current.server_session_id
+    && (normalized.machine_id || '') === (current.machine_id || '')
     && normalized.pane_id === current.pane_id
     && normalized.terminal_id === current.terminal_id
     && normalized.generation === current.generation
@@ -80,6 +85,7 @@ export function targetStoreKey(target: FrontendTargetRef): string | null {
   return JSON.stringify([
     normalized.relay_id,
     normalized.server_session_id,
+    normalized.machine_id || '',
     normalized.pane_id,
     normalized.terminal_id,
     normalized.generation,
@@ -99,6 +105,7 @@ export function encodeTargetRoute(target: FrontendTargetRef): string | null {
     normalized.generation,
     normalized.agent_session_id || '',
   ];
+  if (normalized.machine_id) tuple.push(normalized.machine_id);
   const bytes = new TextEncoder().encode(JSON.stringify(tuple));
   let binary = '';
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -114,7 +121,9 @@ export function decodeTargetRoute(token: string): FrontendTargetRef | null {
     const binary = atob(padded);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
     const tuple = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
-    if (!Array.isArray(tuple) || tuple.length !== TARGET_TUPLE_LENGTH || tuple[0] !== 3) return null;
+    if (!Array.isArray(tuple)
+      || (tuple.length !== TARGET_TUPLE_LENGTH && tuple.length !== TARGET_TUPLE_LENGTH + 1)
+      || tuple[0] !== 3) return null;
     return normalizeFrontendTargetRef({
       relay_id: tuple[1],
       server_session_id: tuple[2],
@@ -122,6 +131,7 @@ export function decodeTargetRoute(token: string): FrontendTargetRef | null {
       terminal_id: tuple[4],
       generation: tuple[5],
       agent_session_id: tuple[6],
+      machine_id: tuple[7],
     });
   } catch {
     return null;
