@@ -42,30 +42,33 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('terminal key controls', () => {
-  it('hides the key row from the floating toggle and brings it back', async () => {
+describe('terminal bottom bar controls', () => {
+  it('hides the whole bottom bar from the floating toggle and brings it back', async () => {
     const user = userEvent.setup();
     mountTerminal();
 
+    expect(screen.getByRole('combobox', { name: 'Prompt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enter' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Hide key controls' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Hide controls' })).toBeVisible();
 
-    await user.click(screen.getByRole('button', { name: 'Hide key controls' }));
+    await user.click(screen.getByRole('button', { name: 'Hide controls' }));
+    expect(screen.queryByRole('combobox', { name: 'Prompt' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send prompt' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enter' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show key controls' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Show controls' })).toBeVisible();
 
-    await user.click(screen.getByRole('button', { name: 'Show key controls' }));
+    await user.click(screen.getByRole('button', { name: 'Show controls' }));
+    expect(screen.getByRole('combobox', { name: 'Prompt' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Enter' })).toBeInTheDocument();
   });
 
-  it('keeps the prompt composer available while the key row is hidden', async () => {
+  it('keeps the terminal output readable while the bar is hidden', async () => {
     const user = userEvent.setup();
     mountTerminal();
 
-    await user.click(screen.getByRole('button', { name: 'Hide key controls' }));
+    await user.click(screen.getByRole('button', { name: 'Hide controls' }));
 
-    expect(screen.getByRole('combobox', { name: 'Prompt' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeInTheDocument();
+    expect(screen.getByRole('log', { name: 'Agent terminal output' })).toBeInTheDocument();
   });
 
   it('remembers the hidden choice and reports it back through the store', () => {

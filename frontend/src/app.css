@@ -669,7 +669,7 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .term-wrap { display: flex; flex: 1 1 auto; min-height: 0; position: relative; }
 .jump-bottom { background: var(--primary); border: 0; border-radius: 50%; bottom: .9rem; color: var(--primary-foreground); height: 2.5rem; position: absolute; right: 1rem; width: 2.5rem; }
 /* Bottom-left so it never fights the contextual jump-to-latest button above on
-   the right, and it stays put while the key row is hidden. */
+   the right, and it stays put while the bottom controls are hidden. */
 .controls-toggle { align-items: center; background: var(--primary); border: 0; border-radius: 50%; bottom: .9rem; color: var(--primary-foreground); display: inline-flex; height: 2.5rem; justify-content: center; left: 1rem; position: absolute; width: 2.5rem; }
 .controls-toggle svg { height: 1.15rem; width: 1.15rem; }
 .terminal-bottom { background: var(--background); border-top: 1px solid var(--border); flex: 0 0 auto; padding-bottom: env(safe-area-inset-bottom); position: relative; }

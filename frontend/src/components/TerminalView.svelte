@@ -2151,9 +2151,9 @@
     {#if !readOnly}
       <button
         class="controls-toggle"
-        aria-label={$terminalKeyControls ? 'Hide key controls' : 'Show key controls'}
+        aria-label={$terminalKeyControls ? 'Hide controls' : 'Show controls'}
         aria-expanded={$terminalKeyControls}
-        title={$terminalKeyControls ? 'Hide key controls' : 'Show key controls'}
+        title={$terminalKeyControls ? 'Hide controls' : 'Show controls'}
         onclick={() => setTerminalKeyControls(!$terminalKeyControls)}
       >{@render keyboardIcon()}</button>
     {/if}
@@ -2214,6 +2214,7 @@
     {/if}
   </div>
 
+  {#if $terminalKeyControls}
   <div class="terminal-bottom" onfocusin={focusComposer} onfocusout={blurComposer}>
     {#if slashMenuOpen}
       <section class="slash-command-popover" aria-label="Command suggestions">
@@ -2400,7 +2401,6 @@
     {#if keyControlStatus}
       <p class:error={keyFeedbackError} class="key-feedback" role="status" aria-live="polite">{keyControlStatus}</p>
     {/if}
-    {#if $terminalKeyControls}
       <div class="term-keys" aria-busy={keySending}>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Tab" title="Send Tab" onpointerdown={(event) => event.preventDefault()} onclick={sendTab}>{@render tabIcon()}</Button>
@@ -2482,7 +2482,7 @@
           <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Enter" onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Enter')}>Enter</Button>
         </div>
       </div>
-    {/if}
   </div>
+  {/if}
 </div>
 </main>
