@@ -203,11 +203,17 @@ Two rules matter:
 
 **Hostname choice.** A tunnel only answers for names whose DNS record points at
 *that* tunnel. The per-shard wildcards `*.sN.<zone>` belong to the **shard**
-tunnels, so a name under one of them never reaches a computer's own tunnel
-without its own record, and it also collides with the `<team>.sN.<zone>` team
-namespace. A single-label name under the zone (sibling of
-`relay-laptop-rao.1us.work`) is simpler: Universal SSL already covers
-`*.<zone>`, so no certificate work is needed.
+tunnels, so a name under one of them reaches the shard's cloudflared first and
+gets its 404 — not this computer's tunnel. Two shapes work:
+
+- a **single-label** name under the zone (sibling of `relay-laptop-rao.1us.work`);
+  Universal SSL already covers `*.<zone>`, so no certificate work is needed;
+- a name under a **shard wildcard**, backed by a **specific record that overrides
+  the wildcard** (a less specific wildcard loses to the exact CNAME). TLS then
+  comes from the shard's ACM certificate (`*.sN.<zone>`), which already exists.
+
+Either way the record must be created from the machine that owns the tunnel, and
+the name must also be in that computer's `ingress`.
 
 **Never publish it bare.** remobi and similar tools have no login of their own.
 Put Cloudflare Access in front first (account-level app + a policy allowing the
@@ -217,10 +223,15 @@ answers unauthenticated. Verify and revoke:
 
 ```bash
 # Public request must ask Access (302 to <team>.cloudflareaccess.com), never
-# serve the app; and the orphaned app must not regress:
-curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://remobi-laptop-rao.1us.work/
+# serve the app; and the relay must not regress:
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://remobi.s1.1us.work/
 curl -s -o /dev/null -w '%{http_code}\n' https://relay-laptop-rao.1us.work/   # still 307
 ```
+
+A public **404** instead of the Access redirect means the name is not routed to
+this tunnel (usually a wildcard pointing at another one): check with
+`cloudflared tunnel --config "$CFG" ingress rule <url>` and read the record back
+from the DNS API.
 
 Deleting the Access application (or its policy) **unprotects** the hostname
 without stopping it — it would then serve the terminal to anyone. To take the
