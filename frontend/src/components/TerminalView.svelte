@@ -72,12 +72,15 @@
     frame,
     responding,
     readOnly = false,
+    machineLabel = '',
   }: {
     agent: Agent;
     allAgents: Agent[];
     frame?: TerminalFrame;
     responding: Set<string>;
     readOnly?: boolean;
+    /** Name of the remote machine this pane mirrors, when it is one. */
+    machineLabel?: string;
   } = $props();
 
   interface VirtualTerminalAnchor {
@@ -2057,9 +2060,19 @@
   aria-label={`${questionMode ? 'Questions' : 'Terminal'} for ${agent.project || agent.name || agent.agent || 'agent'}`}
 >
   {#if readOnly}
-    <p class="key-feedback" role="status">{isRemoteAgent(agent)
-      ? 'Remote machine · read only. Other machines are mirrored for reading this round.'
-      : 'Reader access is read only. Use a controller device to send input or answer prompts.'}</p>
+    {#if isRemoteAgent(agent)}
+      <p class="key-feedback reader-remote" role="status">
+        <span class="readonly-lock" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+            <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+            <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+          </svg>
+        </span>
+        <span>Remote machine{machineLabel ? ` · ${machineLabel}` : ''} · read only. Other machines are mirrored for reading this round.</span>
+      </p>
+    {:else}
+      <p class="key-feedback" role="status">Reader access is read only. Use a controller device to send input or answer prompts.</p>
+    {/if}
   {/if}
   {#if questionMode && interaction}
     <QuestionForm {agent} {interaction} responding={responding.has(agent.pane_id)} />

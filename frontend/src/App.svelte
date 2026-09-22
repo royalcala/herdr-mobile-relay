@@ -31,6 +31,7 @@
     isRemoteAgent,
   } from '$lib/agents';
   import { APP_ASSET_VERSION, APP_BUILD_ID, APP_VERSION } from '$lib/config';
+  import { agentMachineRef } from '$lib/machines';
   import {
     defaultAgentView,
     initializePreferences,
@@ -101,7 +102,8 @@
   const activeReadOnly = $derived(Boolean(
     activeAgent && relayStore.deviceCredential(activeAgent.relay_id)?.role === 'reader',
   ));
-  const machinesList = $derived([...$machines.values()].flat());
+  const machinesList = $derived([...$machines.entries()].flatMap(([relayId, list]) =>
+    list.map((machine) => ({ ...machine, relay_id: relayId }))));
   const readOnlyRelayIds = $derived.by(() => {
     void $connections;
     return new Set($relays
@@ -109,6 +111,7 @@
       .map((relay) => relay.id));
   });
   const activeConnection = $derived(activeAgent ? $connections.get(activeAgent.relay_id) : null);
+  const activeMachine = $derived(activeAgent ? agentMachineRef(activeAgent, machinesList, readOnlyRelayIds) : null);
   const conversationHistoryAvailable = $derived(hasConversationHistory(activeAgent, activeConnection));
   $effect(() => {
     if ($currentView.view !== 'history' || !activeAgent || conversationHistoryComponent) return;
@@ -478,10 +481,14 @@
     const primary = agent.project || displayName(agent);
     if (context) parts.push(context);
     if (agent.agent && agent.agent !== primary && agent.agent !== context) parts.push(agent.agent);
-    const host = hostLabel(agent);
+    // A remote pane names its machine rather than the relay: the header has to
+    // say which computer this read-only mirror belongs to.
+    const machine = activeMachine && isRemoteAgent(agent) ? activeMachine : null;
+    const host = machine?.label || hostLabel(agent);
     if (host) {
       if (parts.length) parts[parts.length - 1] = `${parts[parts.length - 1]} @${host}`;
       else parts.push(`@${host}`);
+      if (machine?.readOnly) parts.push('read only');
     }
     return parts.join(' · ');
   }
@@ -729,7 +736,7 @@
     {#key activeAgent.pane_id}
       <div class="terminal-layout">
         <AgentRail agents={$agents} machines={machinesList} active={activeAgent} onopen={openAgent} onjump={() => { jumpOpen = true; }} />
-        <TerminalView bind:this={terminalView} agent={activeAgent} allAgents={$agents} frame={$frames.get(activeAgent.pane_id)} responding={$responding} readOnly={activeReadOnly || isRemoteAgent(activeAgent)} />
+        <TerminalView bind:this={terminalView} agent={activeAgent} allAgents={$agents} frame={$frames.get(activeAgent.pane_id)} responding={$responding} readOnly={activeReadOnly || isRemoteAgent(activeAgent)} machineLabel={activeMachine?.label || ''} />
       </div>
     {/key}
   {:else if $currentView.view === 'terminal'}
@@ -751,7 +758,7 @@
       <p role="status">Unlocking and validating the exact notification target…</p>
     </main>
   {:else}
-    <AgentList bind:workspaceDisclosure agents={$agents} workspaces={$workspaces} relays={$relays} connections={$connections} responding={$responding} onopen={openAgent} />
+    <AgentList bind:workspaceDisclosure agents={$agents} workspaces={$workspaces} relays={$relays} connections={$connections} machines={machinesList} readOnlyRelays={readOnlyRelayIds} responding={$responding} onopen={openAgent} />
   {/if}
 </div>
 

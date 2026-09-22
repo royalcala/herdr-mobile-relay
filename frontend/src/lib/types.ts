@@ -26,6 +26,12 @@ export interface Machine {
   error?: string;
   agent_count?: number;
   workspace_count?: number;
+  /**
+   * The relay this machine belongs to. Machine ids are only unique within one
+   * relay, so a flattened list needs this tag to keep two relays' `local`
+   * machines apart. Set when the relay's machines are flattened for the UI.
+   */
+  relay_id?: string;
 }
 
 

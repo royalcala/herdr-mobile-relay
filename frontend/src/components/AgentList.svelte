@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import AgentLogo, { hasAgentLogo } from '$components/AgentLogo.svelte';
+  import MachineFilters from '$components/MachineFilters.svelte';
   import Button from '$components/ui/Button.svelte';
   import {
     agentLastActiveAt,
@@ -15,9 +16,18 @@
     sortedAgents,
     tabName,
   } from '$lib/agents';
+  import {
+    buildMachineIndex,
+    machineRef,
+    machineTag,
+    groupAgentsByMachine,
+    type MachineRef,
+    type MachineSection,
+    type StatusFilterKey,
+  } from '$lib/machines';
   import { homeLayout } from '$lib/preferences';
   import { relayStore } from '$lib/store';
-  import type { Agent, RelayConfig, RelayConnectionView, RelayWorkspace } from '$lib/types';
+  import type { Agent, Machine, RelayConfig, RelayConnectionView, RelayWorkspace } from '$lib/types';
   import { homeRelativePath, informativePath, workspaceGroupTrees, workspaceGroups, workspaceIdentity, workspaceProvenance, workspaceStateTone, type WorkspaceGroup, type WorkspaceGroupTree, type WorkspaceTab } from '$lib/workspaces';
 
   let {
@@ -25,6 +35,8 @@
     relays,
     connections = new Map(),
     workspaces = [],
+    machines = [],
+    readOnlyRelays = new Set<string>(),
     workspaceDisclosure = $bindable<Record<string, boolean>>({}),
     responding,
     onopen,
@@ -33,6 +45,8 @@
     relays: RelayConfig[];
     workspaces?: RelayWorkspace[];
     connections?: Map<string, RelayConnectionView>;
+    machines?: Machine[];
+    readOnlyRelays?: Set<string>;
     workspaceDisclosure?: Record<string, boolean>;
     responding: Set<string>;
     onopen: (agent: Agent) => void;
@@ -76,36 +90,137 @@
   // Optimistic arrangement applied between releasing a drag and the relay
   // confirming the new order, so tabs never snap back while Herdr catches up.
   let pendingTabOrder = $state<{ key: string; order: string[] } | null>(null);
-  const backgroundAgents = $derived(agents.filter((agent) => {
-    const group = agentStatusGroup(agent);
-    return group !== 'blocked' && group !== 'attention';
-  }));
-  const workingAgents = $derived(backgroundAgents.filter((agent) => agentStatusGroup(agent) === 'working'));
-  const doneAgents = $derived(backgroundAgents.filter((agent) => agentStatusGroup(agent) === 'done'));
-  const mixedLayout = $derived($homeLayout === 'mixed');
-  const doneWorkspaces = $derived(mixedLayout ? [] : workspaceGroupTrees(workspaceGroups(
-    doneAgents,
-    workspaceRecordsFor(doneAgents, false),
-  )));
-  const workingWorkspaces = $derived(mixedLayout ? [] : workspaceGroupTrees(workspaceGroups(
-    workingAgents,
-    workspaceRecordsFor(workingAgents, false),
-  )));
-  const idleAgents = $derived(backgroundAgents.filter((agent) => {
-    const group = agentStatusGroup(agent);
-    return group !== 'working' && group !== 'done';
-  }));
-  const idleWorkspaces = $derived(mixedLayout ? [] : workspaceGroupTrees(workspaceGroups(
-    idleAgents,
-    workspaceRecordsFor(idleAgents, true),
-  )));
-  const mixedWorkspaces = $derived(mixedLayout
-    ? workspaceGroupTrees(workspaceGroups(backgroundAgents, workspaceRecordsFor(backgroundAgents, true)))
-    : []);
 
-  function workspaceRecordsFor(visible: Agent[], includeEmpty: boolean): RelayWorkspace[] {
+  // The home screen turns machine-first whenever the relay reports more than
+  // one machine, mirroring the desktop rail. A single-machine relay keeps the
+  // flat, status-first list it has always had, so nothing moves under users
+  // who only ever run one host.
+  let machineFilter = $state<string>('all');
+  let statusFilter = $state<StatusFilterKey>('all');
+  const machineSections = $derived(groupAgentsByMachine(agents, workspaces, machines, readOnlyRelays));
+  const machinesKnown = $derived(machines.length > 0);
+  const showMachineNav = $derived(machinesKnown && machineSections.length > 1);
+  // A filter only sticks while the machine it names still exists, so a machine
+  // disappearing under it falls back to the full list instead of a blank page.
+  const activeMachineFilter = $derived(
+    machineFilter !== 'all' && machineSections.some((section) => section.key === machineFilter)
+      ? machineFilter
+      : 'all',
+  );
+  const groupByMachine = $derived(showMachineNav && activeMachineFilter === 'all');
+  const scopedSections = $derived(activeMachineFilter === 'all'
+    ? machineSections
+    : machineSections.filter((section) => section.key === activeMachineFilter));
+  const mixedMode = $derived($homeLayout === 'mixed' && statusFilter === 'all');
+
+  const layouts = $derived.by(() => {
+    if (groupByMachine) {
+      return machineSections.map((section) => ({
+        key: section.key,
+        section: section as MachineSection | null,
+        layout: statusLayout(section.agents, section.workspaces),
+      }));
+    }
+    return [{
+      key: 'all',
+      section: null as MachineSection | null,
+      layout: statusLayout(
+        scopedSections.flatMap((section) => section.agents),
+        scopedSections.flatMap((section) => section.workspaces),
+      ),
+    }];
+  });
+  const allTrees = $derived(layouts.flatMap(({ layout }) => [
+    ...layout.doneTrees, ...layout.workingTrees, ...layout.idleTrees, ...layout.mixedTrees,
+  ]));
+  const visibleSectionCount = $derived(layouts.reduce(
+    (count, { layout }) => count + (layoutHasCards(layout) ? 1 : 0),
+    0,
+  ));
+  // The filter bar is worth its row only once there is something to choose
+  // between, or once a filter is set and the user needs to lift it again.
+  const filterBarVisible = $derived(
+    showMachineNav || statusFilter !== 'all' || activeMachineFilter !== 'all' || agents.length > 1,
+  );
+  const agentMachineRefs = $derived.by(() => {
+    const index = buildMachineIndex(machines);
+    const refs = new Map<string, MachineRef>();
+    for (const agent of agents) {
+      refs.set(agent.pane_id, machineRef(
+        index,
+        String(agent.relay_id || ''),
+        String(agent.relay_label || ''),
+        agent.machine_id,
+        String(agent.host || ''),
+        readOnlyRelays,
+      ));
+    }
+    return refs;
+  });
+
+  interface StatusLayout {
+    attention: Agent[];
+    blocked: Agent[];
+    workingAgents: Agent[];
+    doneAgents: Agent[];
+    idleAgents: Agent[];
+    doneTrees: WorkspaceGroupTree[];
+    workingTrees: WorkspaceGroupTree[];
+    idleTrees: WorkspaceGroupTree[];
+    mixedTrees: WorkspaceGroupTree[];
+  }
+
+  function layoutHasCards(layout: StatusLayout): boolean {
+    return Boolean(
+      layout.attention.length || layout.blocked.length
+      || layout.workingTrees.length || layout.doneTrees.length
+      || layout.idleTrees.length || layout.mixedTrees.length,
+    );
+  }
+
+  function statusLayout(list: Agent[], listWorkspaces: RelayWorkspace[]): StatusLayout {
+    const background = list.filter((agent) => {
+      const group = agentStatusGroup(agent);
+      return group !== 'blocked' && group !== 'attention';
+    });
+    const working = background.filter((agent) => agentStatusGroup(agent) === 'working');
+    const done = background.filter((agent) => agentStatusGroup(agent) === 'done');
+    const idle = background.filter((agent) => {
+      const group = agentStatusGroup(agent);
+      return group !== 'working' && group !== 'done';
+    });
+    return {
+      attention: sortedAgents(list.filter((agent) => agentStatusGroup(agent) === 'attention')),
+      blocked: sortedAgents(list.filter((agent) => agentStatusGroup(agent) === 'blocked')),
+      workingAgents: working,
+      doneAgents: done,
+      idleAgents: idle,
+      doneTrees: mixedMode ? [] : workspaceGroupTrees(workspaceGroups(
+        done,
+        workspaceRecordsFor(list, listWorkspaces, done, false),
+      )),
+      workingTrees: mixedMode ? [] : workspaceGroupTrees(workspaceGroups(
+        working,
+        workspaceRecordsFor(list, listWorkspaces, working, false),
+      )),
+      idleTrees: mixedMode ? [] : workspaceGroupTrees(workspaceGroups(
+        idle,
+        workspaceRecordsFor(list, listWorkspaces, idle, true),
+      )),
+      mixedTrees: mixedMode
+        ? workspaceGroupTrees(workspaceGroups(background, workspaceRecordsFor(list, listWorkspaces, background, true)))
+        : [],
+    };
+  }
+
+  function workspaceRecordsFor(
+    allAgents: Agent[],
+    listWorkspaces: RelayWorkspace[],
+    visible: Agent[],
+    includeEmpty: boolean,
+  ): RelayWorkspace[] {
     const visibleKeys = new Set(visible.map((agent) => workspaceIdentity(agent)));
-    const occupiedKeys = new Set(agents.map((agent) => workspaceIdentity(agent)));
+    const occupiedKeys = new Set(allAgents.map((agent) => workspaceIdentity(agent)));
     // A linked worktree whose repository workspace is not open on the same
     // relay has no parent card to nest under (relayWorkspaceTrees renders it
     // top-level), so an empty one must stay visible in its own right.
@@ -113,32 +228,32 @@
       const worktree = workspace.worktree;
       if (worktree?.is_linked_worktree !== true) return false;
       if (!worktree.repo_key) return true;
-      return !workspaces.some((candidate) => (
+      return !listWorkspaces.some((candidate) => (
         candidate.relay_id === workspace.relay_id
         && candidate.worktree?.repo_key === worktree.repo_key
         && candidate.worktree.is_linked_worktree === false
       ));
     };
-    const selected = new Set(workspaces.filter((workspace) => {
+    const selected = new Set(listWorkspaces.filter((workspace) => {
       const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
       const unoccupiedTopLevel = includeEmpty
         && !occupiedKeys.has(key)
         && (workspace.worktree?.is_linked_worktree !== true || orphanLinkedWorktree(workspace));
       return visibleKeys.has(key) || unoccupiedTopLevel;
     }).map((workspace) => `${workspace.relay_id}\u0000${workspace.workspace_id}`));
-    for (const workspace of workspaces) {
+    for (const workspace of listWorkspaces) {
       const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
       const worktree = workspace.worktree;
       if (!worktree?.repo_key) continue;
       if (worktree.is_linked_worktree && selected.has(key)) {
-        const parent = workspaces.find((candidate) => (
+        const parent = listWorkspaces.find((candidate) => (
           candidate.relay_id === workspace.relay_id
           && candidate.worktree?.repo_key === worktree.repo_key
           && candidate.worktree.is_linked_worktree === false
         ));
         if (parent) selected.add(`${parent.relay_id}\u0000${parent.workspace_id}`);
       } else if (!worktree.is_linked_worktree && selected.has(key)) {
-        for (const child of workspaces) {
+        for (const child of listWorkspaces) {
           const childKey = `${child.relay_id}\u0000${child.workspace_id}`;
           if (child.relay_id === workspace.relay_id
             && child.worktree?.repo_key === worktree.repo_key
@@ -149,13 +264,13 @@
         }
       }
     }
-    return workspaces.filter((workspace) => selected.has(`${workspace.relay_id}\u0000${workspace.workspace_id}`));
+    return listWorkspaces.filter((workspace) => selected.has(`${workspace.relay_id}\u0000${workspace.workspace_id}`));
   }
 
   $effect(() => {
     if (!pendingTabOrder) return;
     const pending = pendingTabOrder;
-    const workspace = [...doneWorkspaces, ...workingWorkspaces, ...idleWorkspaces, ...mixedWorkspaces]
+    const workspace = allTrees
       .flatMap((tree) => [tree.workspace, ...tree.children])
       .find((group) => group.key === pending.key);
     if (!workspace || workspace.tabs.map((tab) => tab.id).join('\u0000') === pending.order.join('\u0000')) {
@@ -454,6 +569,13 @@
   <small class="path-row">{@render folderIcon()}<span>{path}</span></small>
 {/snippet}
 
+{#snippet lockIcon()}
+  <svg class="lock-symbol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+    <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+    <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+  </svg>
+{/snippet}
+
 {#snippet agentGrid(visible: Agent[], compact: boolean, reorderWorkspace?: WorkspaceGroup, reorderTabId?: string)}
   <div class:compact-agent-grid={compact} class="agent-grid">
     {#each visible as agent (agent.pane_id)}
@@ -467,10 +589,15 @@
       {@const age = relativeAge(agent)}
       {@const agentPath = compact ? relayPath(agent.relay_id, String(agent.cwd || '')) : ''}
       {@const inventoryReady = !connections.has(agent.relay_id) || connections.get(agent.relay_id)?.inventory.state === 'ready'}
+      {@const machine = agentMachineRefs.get(agent.pane_id)}
+      <!-- The machine tag earns its space once more than one is in play, and
+           always on a read-only mirror, where the reader must know before
+           opening that input will be disabled. -->
+      {@const machineBadge = machine && (showMachineNav || machine.readOnly) ? machine : null}
       <article class:blocked class:compact-agent-card={compact} class:stale={!inventoryReady} class="agent-card">
         <button
           class="agent-open"
-          aria-label={`Open ${displayName(agent)} on ${hostLabel(agent)}`}
+          aria-label={`Open ${displayName(agent)} on ${hostLabel(agent)}${machineBadge?.readOnly ? ', read only' : ''}`}
           disabled={!inventoryReady}
           title={!inventoryReady
             ? 'This cached agent is unavailable until Herdr inventory recovers.'
@@ -492,6 +619,16 @@
                 <span class="agent-path">{@render folderIcon()}<span>{agentPath}</span></span>
               {:else}
                 <span class="agent-project">{displayName(agent)}{#if !compact} <span class="host-badge">@{hostLabel(agent)}</span>{/if}</span>
+              {/if}
+              {#if machineBadge}
+                <span
+                  class="machine-badge"
+                  class:read-only={machineBadge.readOnly}
+                  title={`${machineTag(machineBadge)} machine ${machineBadge.label}${machineBadge.readOnly ? ' · read only' : ''}`}
+                >
+                  {#if machineBadge.readOnly}{@render lockIcon()}{/if}
+                  <span class="machine-badge-label">{machineBadge.label}</span>
+                </span>
               {/if}
               {#if compact && age}
                 <time class="agent-age" datetime={new Date(agentLastActiveAt(agent)).toISOString()} title={new Date(agentLastActiveAt(agent)).toLocaleString()}>{age}</time>
@@ -674,53 +811,145 @@
     <div class="empty-state" role="status">Waiting for relays…</div>
   {/if}
 
-  {#each statusDefinitions as [group, title, tone] (group)}
-    {@const visible = sortedAgents(agents.filter((agent) => agentStatusGroup(agent) === group))}
-    {#if visible.length}
-      <section class="agent-section" aria-labelledby={`section-${group}`}>
-        <h2 id={`section-${group}`} class="section-heading">
-          <span class={`status-dot status-${tone}`}></span>{title}
-          <span class="section-count" aria-hidden="true">{visible.length}</span>
-        </h2>
-        {@render agentGrid(visible, false)}
+  {#snippet statusSections(layout: StatusLayout, prefix: string, nested: boolean)}
+    {@const blockedVisible = statusFilter === 'all' || statusFilter === 'blocked'}
+    {@const workingVisible = statusFilter === 'all' || statusFilter === 'working'}
+    {@const doneVisible = statusFilter === 'all' || statusFilter === 'done'}
+    {@const idleVisible = statusFilter === 'all' || statusFilter === 'idle'}
+    {#each statusDefinitions as [group, title, tone] (group)}
+      {@const visible = group === 'blocked' ? layout.blocked : layout.attention}
+      {#if blockedVisible && visible.length}
+        <section class="agent-section" aria-labelledby={`${prefix}section-${group}`}>
+          {#if nested}
+            <h3 id={`${prefix}section-${group}`} class="section-heading">
+              <span class={`status-dot status-${tone}`}></span>{title}
+              <span class="section-count" aria-hidden="true">{visible.length}</span>
+            </h3>
+          {:else}
+            <h2 id={`${prefix}section-${group}`} class="section-heading">
+              <span class={`status-dot status-${tone}`}></span>{title}
+              <span class="section-count" aria-hidden="true">{visible.length}</span>
+            </h2>
+          {/if}
+          {@render agentGrid(visible, false)}
+        </section>
+      {/if}
+    {/each}
+
+    {#if doneVisible && layout.doneTrees.length}
+      <section class="agent-section done-section" aria-labelledby={`${prefix}section-done`}>
+        {#if nested}
+          <h3 id={`${prefix}section-done`} class="section-heading">
+            <span class="status-dot status-success"></span>Done
+            <span class="section-count" aria-hidden="true">{layout.doneAgents.length}</span>
+          </h3>
+        {:else}
+          <h2 id={`${prefix}section-done`} class="section-heading">
+            <span class="status-dot status-success"></span>Done
+            <span class="section-count" aria-hidden="true">{layout.doneAgents.length}</span>
+          </h2>
+        {/if}
+        {@render workspaceGrid(layout.doneTrees, true, 'done')}
       </section>
     {/if}
-  {/each}
 
-  {#if doneWorkspaces.length}
-    <section class="agent-section done-section" aria-labelledby="section-done">
-      <h2 id="section-done" class="section-heading">
-        <span class="status-dot status-success"></span>Done
-        <span class="section-count" aria-hidden="true">{doneAgents.length}</span>
-      </h2>
-      {@render workspaceGrid(doneWorkspaces, true, 'done')}
-    </section>
+    {#if workingVisible && layout.workingTrees.length}
+      <section class="agent-section working-section" aria-labelledby={`${prefix}section-working`}>
+        {#if nested}
+          <h3 id={`${prefix}section-working`} class="section-heading">
+            <span class="status-dot status-warning"></span>Working
+            <span class="section-count" aria-hidden="true">{layout.workingAgents.length}</span>
+          </h3>
+        {:else}
+          <h2 id={`${prefix}section-working`} class="section-heading">
+            <span class="status-dot status-warning"></span>Working
+            <span class="section-count" aria-hidden="true">{layout.workingAgents.length}</span>
+          </h2>
+        {/if}
+        {@render workspaceGrid(layout.workingTrees, true, 'working')}
+      </section>
+    {/if}
+
+    {#if idleVisible && layout.idleTrees.length}
+      <section class="agent-section workspace-section" aria-labelledby={`${prefix}workspace-section-title`}>
+        {#if nested}
+          <h3 id={`${prefix}workspace-section-title`} class="section-heading">
+            <span class="status-dot hollow"></span>Idle
+            <span class="section-count" aria-hidden="true">{layout.idleTrees.length}</span>
+          </h3>
+        {:else}
+          <h2 id={`${prefix}workspace-section-title`} class="section-heading">
+            <span class="status-dot hollow"></span>Idle
+            <span class="section-count" aria-hidden="true">{layout.idleTrees.length}</span>
+          </h2>
+        {/if}
+        {@render workspaceGrid(layout.idleTrees, layout.idleTrees.length === 1, 'idle')}
+      </section>
+    {/if}
+
+    {#if layout.mixedTrees.length}
+      <!-- No visible heading: the per-card state dots already tell the story. -->
+      <section class="agent-section workspace-section" aria-label="Workspaces">
+        {@render workspaceGrid(layout.mixedTrees, layout.mixedTrees.length === 1, 'mixed')}
+      </section>
+    {/if}
+  {/snippet}
+
+  {#if filterBarVisible}
+    <MachineFilters
+      sections={machineSections}
+      machineFilter={activeMachineFilter}
+      {statusFilter}
+      showMachines={showMachineNav}
+      onmachine={(key) => { machineFilter = key; }}
+      onstatus={(key) => { statusFilter = key; }}
+    />
   {/if}
 
-  {#if workingWorkspaces.length}
-    <section class="agent-section working-section" aria-labelledby="section-working">
-      <h2 id="section-working" class="section-heading">
-        <span class="status-dot status-warning"></span>Working
-        <span class="section-count" aria-hidden="true">{workingAgents.length}</span>
-      </h2>
-      {@render workspaceGrid(workingWorkspaces, true, 'working')}
-    </section>
+  {#if !visibleSectionCount && agents.length}
+    <div class="empty-state" role="status">No agents match this filter.</div>
   {/if}
 
-  {#if idleWorkspaces.length}
-    <section class="agent-section workspace-section" aria-labelledby="workspace-section-title">
-      <h2 id="workspace-section-title" class="section-heading">
-        <span class="status-dot hollow"></span>Idle
-        <span class="section-count" aria-hidden="true">{idleWorkspaces.length}</span>
-      </h2>
-      {@render workspaceGrid(idleWorkspaces, idleWorkspaces.length === 1, 'idle')}
-    </section>
-  {/if}
-
-  {#if mixedWorkspaces.length}
-    <!-- No visible heading: the per-card state dots already tell the story. -->
-    <section class="agent-section workspace-section" aria-label="Workspaces">
-      {@render workspaceGrid(mixedWorkspaces, mixedWorkspaces.length === 1, 'mixed')}
-    </section>
+  {#if groupByMachine}
+    {#each layouts as item, index (item.key)}
+      {@const section = item.section}
+      <section
+        class="machine-section"
+        class:remote={section && !section.ref.local}
+        class:offline={section && !section.ref.reachable}
+        class:read-only={section?.ref.readOnly}
+        aria-labelledby={`machine-${index}-title`}
+      >
+        {#if section}
+          <header class="machine-header">
+            <h2 id={`machine-${index}-title`} class="machine-title">
+              <span class="machine-name">{section.ref.label}</span>
+              {#if !section.ref.local}
+                <span class={`machine-tag ${machineTag(section.ref)}`}>{machineTag(section.ref)}</span>
+              {/if}
+              {#if section.ref.readOnly}
+                <span class="machine-readonly">{@render lockIcon()}<span>Read-only</span></span>
+              {/if}
+            </h2>
+            <p class="machine-meta">
+              {#if section.ref.host}<span class="machine-host">{section.ref.host}</span>{/if}
+              <span class="machine-counts">
+                {section.counts.total} {section.counts.total === 1 ? 'agent' : 'agents'}
+                {#if section.counts.blocked}<em class="machine-blocked">{section.counts.blocked} waiting</em>{/if}
+              </span>
+            </p>
+            {#if section.ref.error}<p class="machine-error">{section.ref.error}</p>{/if}
+          </header>
+        {/if}
+        {@render statusSections(item.layout, `machine-${index}-`, true)}
+        {#if section && !section.counts.total && !layoutHasCards(item.layout)}
+          <p class="machine-empty">No agents reported on this machine.</p>
+        {/if}
+      </section>
+    {/each}
+  {:else}
+    {#each layouts as item (item.key)}
+      {@render statusSections(item.layout, '', false)}
+    {/each}
   {/if}
 </main>
