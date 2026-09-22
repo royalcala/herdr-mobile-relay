@@ -3908,15 +3908,23 @@ func mergeAgentSnapshot(current, incoming []*coordinator.AgentState) []*coordina
 	merged := cloneAgents(incoming)
 	currentByPane := make(map[string]*coordinator.AgentState, len(current))
 	for _, agent := range current {
-		currentByPane[agent.PaneID] = agent
+		currentByPane[agentIdentity(agent)] = agent
 	}
 	for index, agent := range merged {
-		if existing := currentByPane[agent.PaneID]; existing != nil &&
+		if existing := currentByPane[agentIdentity(agent)]; existing != nil &&
 			agent.StateRevision < existing.StateRevision {
 			merged[index] = cloneAgents([]*coordinator.AgentState{existing})[0]
 		}
 	}
 	return merged
+}
+
+// agentIdentity keys a snapshot row by machine and pane. Pane IDs are
+// per-server, so the local session and a saved machine can both host w1:p1;
+// keying by pane alone let one machine's row (the mirrored rows always carry
+// revision 0) overwrite the other's.
+func agentIdentity(agent *coordinator.AgentState) string {
+	return agent.MachineID + "\x00" + agent.PaneID
 }
 
 func deltaRevision(delta map[string]any) int64 {

@@ -107,19 +107,12 @@ func (m *Manager) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	m.mu.RLock()
-	previous := make(map[string]Snapshot, len(m.snapshots))
-	for _, snapshot := range m.snapshots {
-		previous[snapshot.ID] = snapshot
-	}
-	m.mu.RUnlock()
-
 	snapshots := make([]Snapshot, 0, len(list))
 	for _, machine := range list {
 		if !machine.Enabled {
 			continue
 		}
-		snapshots = append(snapshots, m.fetch(ctx, machine, previous[machine.ID]))
+		snapshots = append(snapshots, m.fetch(ctx, machine))
 	}
 	m.mu.Lock()
 	changed := !snapshotsEqual(m.snapshots, snapshots)
@@ -155,7 +148,7 @@ func (m *Manager) Agent(machineID, paneID string) (coordinator.AgentState, bool)
 	return coordinator.AgentState{}, false
 }
 
-func (m *Manager) fetch(ctx context.Context, machine herdr.Machine, prev Snapshot) Snapshot {
+func (m *Manager) fetch(ctx context.Context, machine herdr.Machine) Snapshot {
 	snapshot := Snapshot{
 		ID:     machine.ID,
 		Label:  machine.Label,
@@ -166,31 +159,52 @@ func (m *Manager) fetch(ctx context.Context, machine herdr.Machine, prev Snapsho
 	defer cancel()
 	panes, err := m.client.MachineAgentList(fetchCtx, machine.ID)
 	if err != nil {
-		return unreachableSnapshot(snapshot, prev, err)
+		return unreachableSnapshot(snapshot, err)
 	}
 	workspaces, err := m.client.MachineWorkspaceList(fetchCtx, machine.ID)
 	if err != nil {
-		return unreachableSnapshot(snapshot, prev, err)
+		return unreachableSnapshot(snapshot, err)
 	}
 	tabs, tabErr := m.client.MachineTabList(fetchCtx, machine.ID)
 	if tabErr != nil {
 		m.logger.Debug("machine tab list failed", "machine", machine.ID, "error", tabErr)
 	}
 	snapshot.Reachable = true
-	snapshot.Workspaces = workspaces
 	snapshot.Agents = agentsFromPanes(machine.ID, snapshot.Host, panes, tabs)
+	snapshot.Workspaces = agentWorkspaces(snapshot.Agents, workspaces)
 	return snapshot
 }
 
-// unreachableSnapshot keeps the last good inventory so a transient SSH failure
-// dims the machine instead of emptying its group.
-func unreachableSnapshot(snapshot, prev Snapshot, err error) Snapshot {
+// unreachableSnapshot reports a failed fetch. It keeps no inventory: the last
+// good agents and workspaces would otherwise survive as ghost panes for as long
+// as the machine stays down, and a mirrored row the phone cannot re-verify is
+// worse than a dimmed, empty machine.
+func unreachableSnapshot(snapshot Snapshot, err error) Snapshot {
 	snapshot.Error = err.Error()
-	if prev.ID == snapshot.ID {
-		snapshot.Agents = prev.Agents
-		snapshot.Workspaces = prev.Workspaces
-	}
 	return snapshot
+}
+
+// agentWorkspaces keeps only the workspaces that host a mirrored agent. The
+// mirror exposes agent sessions, so a workspace whose panes are all shells (or
+// whose agents have exited) is not part of it: serving it would hand the phone
+// an empty group that no agent can fill.
+func agentWorkspaces(agents []*coordinator.AgentState, workspaces []herdr.Workspace) []herdr.Workspace {
+	if len(workspaces) == 0 {
+		return nil
+	}
+	hosted := make(map[string]bool, len(agents))
+	for _, agent := range agents {
+		if agent.WorkspaceID != "" {
+			hosted[agent.WorkspaceID] = true
+		}
+	}
+	kept := make([]herdr.Workspace, 0, len(workspaces))
+	for _, workspace := range workspaces {
+		if hosted[workspace.ID] {
+			kept = append(kept, workspace)
+		}
+	}
+	return kept
 }
 
 func snapshotsEqual(a, b []Snapshot) bool {
