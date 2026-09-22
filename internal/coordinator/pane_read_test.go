@@ -161,3 +161,46 @@ func TestTextFormatDisplayReadNeverHarvestsScrollback(t *testing.T) {
 		t.Fatalf("text-format reads did not all use the visible screen: %s", invocations)
 	}
 }
+
+// A remote pane's response must carry the machine-scoped pane ID the phone keys
+// on. Two saved machines can both host `w1:p1`, so the app namespaces a remote
+// agent's key as `<relay>::<machine>::<raw>`; it rebuilds that key from a frame
+// as `clientPaneId(relay, frame.pane_id)` = `<relay>::<frame.pane_id>`. A bare
+// per-server pane ID therefore lands under the local key (or is dropped once the
+// echoed target fails to match), so the terminal view never receives the frame
+// and the pane stays on "Loading…" forever.
+func TestHandleReadPaneMachineScopesPaneIDToMachine(t *testing.T) {
+	dir := t.TempDir()
+	record := filepath.Join(dir, "invocations.log")
+	bin := writeScript(t, dir, "herdr", "#!/bin/sh\n"+
+		"printf '%s\\n' \"$*\" >> \""+record+"\"\n"+
+		"if [ \"$1\" = \"--machine\" ]; then\n"+
+		"  printf 'remote pane content\\n'\n"+
+		"fi\n")
+	dispatcher := NewDispatcher(
+		herdr.NewClient(bin, filepath.Join(dir, "missing.sock")),
+		NewState(testLogger()),
+		nil,
+		testLogger(),
+	)
+
+	response := dispatcher.HandleReadPane(context.Background(), map[string]any{
+		"pane_id": "w2:p2", "machine_id": "m1", "lines": float64(30), "format": "ansi",
+	})
+	if _, failed := response["error"]; failed {
+		t.Fatalf("remote read failed: %#v", response)
+	}
+	if got := response["pane_id"]; got != "m1::w2:p2" {
+		t.Fatalf("remote pane_content pane_id = %#v, want m1::w2:p2 so the phone keys it under the machine", got)
+	}
+	if response["content"] != "remote pane content\n" {
+		t.Fatalf("remote pane content = %#v, want the CLI read", response["content"])
+	}
+	invocations, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(invocations), "--machine m1 pane read w2:p2") {
+		t.Fatalf("remote read did not use the --machine prefix: %s", invocations)
+	}
+}

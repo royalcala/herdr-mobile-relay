@@ -1189,21 +1189,26 @@ func (d *Dispatcher) handleReadPaneMachine(
 	if format != "ansi" {
 		format = "text"
 	}
+	// The phone keys pane frames by `<relay>::<pane_id>` and namespaces a remote
+	// agent's own key as `<relay>::<machine>::<pane_id>`, so a remote frame must
+	// carry the machine scope or it lands under the local key and the pane never
+	// leaves "Loading…".
+	paneKey := machineid.ScopedPaneID(machineID, paneID)
 	if paneID == "" {
-		return map[string]any{"type": "pane_content", "pane_id": "", "content": "", "format": format}
+		return map[string]any{"type": "pane_content", "pane_id": paneKey, "content": "", "format": format}
 	}
 	readCtx, cancel := context.WithTimeout(ctx, commandDeadline)
 	defer cancel()
 	read, err := d.herdr.ReadPaneMachine(readCtx, machineID, paneID, lines, format, "recent-unwrapped")
 	if err != nil {
 		return map[string]any{
-			"type": "pane_content", "pane_id": paneID, "content": "", "format": format,
+			"type": "pane_content", "pane_id": paneKey, "content": "", "format": format,
 			"error": "Unable to read the remote agent pane",
 		}
 	}
 	content := capPaneContentLines(read.Content, lines)
 	response := map[string]any{
-		"type": "pane_content", "pane_id": paneID, "content": string(content),
+		"type": "pane_content", "pane_id": paneKey, "content": string(content),
 		"format": format, "truncated": read.Truncated, "viewport_only": false,
 		"interaction": nil, "question_layout": false,
 	}
