@@ -169,3 +169,64 @@ setup.
 
 The QR imports the relay URL, label, and relay key, so treat the QR and setup
 link as secrets.
+
+## Serving another local service from the same tunnel
+
+The relay's cloudflared can publish a second loopback service without a second
+tunnel. Only `ingress` changes; the `tunnel:` and `credentials-file:` lines stay.
+
+Two rules matter:
+
+1. **Append the new rule after the relay's own rule and before the catch-all.**
+   `read_cloudflared_relay_config` (the plugin's validator, used by
+   `change-hostname` and the wizard) reads the *first* `hostname:`/`service:` it
+   finds and requires it to be the relay's loopback origin on `HERDR_RELAY_PORT`.
+   Reordering the block, or putting the new rule first, makes the wizard refuse
+   the config. The catch-all `http_status:404` always stays last.
+2. **Validate before restarting**, and preview the match with cloudflared's own
+   resolver:
+
+   ```bash
+   CFG="$CLOUDFLARED_CONFIG"          # ~/.config/herdr/plugins/.../cloudflared/config.yml
+   cp -a "$CFG" "$CFG.bak-$(date +%Y%m%d-%H%M%S)"   # always keep a dated backup
+   cloudflared tunnel --config "$CFG" ingress validate
+   cloudflared tunnel --config "$CFG" ingress rule https://relay.example.com/
+   ```
+
+   In cloudflared 2026.9.1 the ingress is **not** reloaded when the file changes
+   (no reload record in the journal), so restart the unit — it runs the relay and
+   cloudflared together, so the phone app blips for a few seconds:
+
+   ```bash
+   systemctl --user restart herdr-mobile-relay.service
+   ```
+
+**Hostname choice.** A tunnel only answers for names whose DNS record points at
+*that* tunnel. The per-shard wildcards `*.sN.<zone>` belong to the **shard**
+tunnels, so a name under one of them never reaches a computer's own tunnel
+without its own record, and it also collides with the `<team>.sN.<zone>` team
+namespace. A single-label name under the zone (sibling of
+`relay-laptop-rao.1us.work`) is simpler: Universal SSL already covers
+`*.<zone>`, so no certificate work is needed.
+
+**Never publish it bare.** remobi and similar tools have no login of their own.
+Put Cloudflare Access in front first (account-level app + a policy allowing the
+operator's email, which uses the One-Time PIN identity provider), then add the
+DNS record, and only then load the ingress — in that order the hostname never
+answers unauthenticated. Verify and revoke:
+
+```bash
+# Public request must ask Access (302 to <team>.cloudflareaccess.com), never
+# serve the app; and the orphaned app must not regress:
+curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://remobi-laptop-rao.1us.work/
+curl -s -o /dev/null -w '%{http_code}\n' https://relay-laptop-rao.1us.work/   # still 307
+```
+
+Deleting the Access application (or its policy) **unprotects** the hostname
+without stopping it — it would then serve the terminal to anyone. To take the
+service down instead, delete the DNS record and the ingress rule.
+
+To revert the whole change: restore the dated backup over `$CLOUDFLARED_CONFIG`
+and restart the unit; the DNS record and Access app are independent and can be
+left or deleted separately.
+
