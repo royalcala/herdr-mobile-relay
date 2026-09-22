@@ -27,6 +27,51 @@ make relay-plugin      # link this checkout as a Herdr plugin
 make stable-setup      # run the stable tunnel wizard with the installed relay
 ```
 
+## Committed web bundle
+
+The phone app ships from `web/`, a committed copy of a verified `frontend/dist`
+build. Release CI checks that bundle rather than regenerating it, so a frontend
+change only reaches phones once `web/` is rebuilt and committed alongside it.
+
+```bash
+make web-release        # bump assets, run frontend-check, copy dist -> web, verify
+make web-release-check  # assert dist == web and browser-test the shipped bundle
+```
+
+`make web-release` runs, in order:
+
+1. `bun frontend/scripts/bump-assets.mjs` — increments the `assets` cache-buster
+   in `frontend/build-versions.json`. The product version itself is
+   `herdr-plugin.toml`'s `version`, not this counter.
+2. `make frontend-check` — eslint, `svelte-check`, `vitest`, the production
+   build into `frontend/dist`, the payload size check, and the service-worker
+   and notification-icon builds.
+3. `bun frontend/scripts/release.mjs` — replaces the committed `web/` tree with
+   `frontend/dist`.
+4. `make web-bundle-check` — `validate-build.mjs`, `check-size.mjs`, and the
+   worker/icon builds against `web/`.
+
+The same result, step by step, when the full check cannot run in one pass:
+
+```bash
+bun frontend/scripts/bump-assets.mjs
+bun run --cwd frontend build     # vite build + finalize + brotli + validate
+bun frontend/scripts/release.mjs # copy frontend/dist -> web
+make web-bundle-check
+```
+
+Constraints the checks enforce:
+
+- The initial payload — `index.html`, `herdr-bootstrap.js`, the build entry, and
+  `assets/app-*.js` / `assets/app-*.css` — must fit a 165 KiB gzip ceiling
+  (`frontend/scripts/check-size.mjs`). Keep anything large in a lazy chunk.
+- `web/release.json` and `web/version.json` must agree with each other, with
+  `herdr-plugin.toml`, and with `frontend/build-versions.json`. The entry path is
+  `builds/<version>-<assets>-<build16>/index.html`, and its JS/CSS sha256 and
+  Brotli sidecars must match the emitted files.
+- `make web-release-check` proves `frontend/dist` and `web/` are byte-identical
+  (`diff -qr frontend/dist web`) before the browser suites run against `web/`.
+
 ## Testing a release candidate
 
 Candidates are published as prereleases, which ordinary relays never install:
