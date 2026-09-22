@@ -219,6 +219,14 @@
     visible: Agent[],
     includeEmpty: boolean,
   ): RelayWorkspace[] {
+    // A workspace's record key must match workspaceIdentity(agent): machine IDs
+    // are per-server, so two machines can each host w1. Keying records by relay
+    // and workspace alone made every mirrored record look unoccupied, which
+    // rendered each one as an extra empty idle card.
+    const recordKey = (workspace: RelayWorkspace): string =>
+      `${workspace.relay_id}\u0000${workspace.machine_id || ''}\u0000${workspace.workspace_id}`;
+    const sameMachine = (left: RelayWorkspace, right: RelayWorkspace): boolean =>
+      left.relay_id === right.relay_id && (left.machine_id || '') === (right.machine_id || '');
     const visibleKeys = new Set(visible.map((agent) => workspaceIdentity(agent)));
     const occupiedKeys = new Set(allAgents.map((agent) => workspaceIdentity(agent)));
     // A linked worktree whose repository workspace is not open on the same
@@ -229,33 +237,33 @@
       if (worktree?.is_linked_worktree !== true) return false;
       if (!worktree.repo_key) return true;
       return !listWorkspaces.some((candidate) => (
-        candidate.relay_id === workspace.relay_id
+        sameMachine(candidate, workspace)
         && candidate.worktree?.repo_key === worktree.repo_key
         && candidate.worktree.is_linked_worktree === false
       ));
     };
     const selected = new Set(listWorkspaces.filter((workspace) => {
-      const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
+      const key = recordKey(workspace);
       const unoccupiedTopLevel = includeEmpty
         && !occupiedKeys.has(key)
         && (workspace.worktree?.is_linked_worktree !== true || orphanLinkedWorktree(workspace));
       return visibleKeys.has(key) || unoccupiedTopLevel;
-    }).map((workspace) => `${workspace.relay_id}\u0000${workspace.workspace_id}`));
+    }).map(recordKey));
     for (const workspace of listWorkspaces) {
-      const key = `${workspace.relay_id}\u0000${workspace.workspace_id}`;
+      const key = recordKey(workspace);
       const worktree = workspace.worktree;
       if (!worktree?.repo_key) continue;
       if (worktree.is_linked_worktree && selected.has(key)) {
         const parent = listWorkspaces.find((candidate) => (
-          candidate.relay_id === workspace.relay_id
+          sameMachine(candidate, workspace)
           && candidate.worktree?.repo_key === worktree.repo_key
           && candidate.worktree.is_linked_worktree === false
         ));
-        if (parent) selected.add(`${parent.relay_id}\u0000${parent.workspace_id}`);
+        if (parent) selected.add(recordKey(parent));
       } else if (!worktree.is_linked_worktree && selected.has(key)) {
         for (const child of listWorkspaces) {
-          const childKey = `${child.relay_id}\u0000${child.workspace_id}`;
-          if (child.relay_id === workspace.relay_id
+          const childKey = recordKey(child);
+          if (sameMachine(child, workspace)
             && child.worktree?.repo_key === worktree.repo_key
             && child.worktree.is_linked_worktree
             && !occupiedKeys.has(childKey)) {
@@ -264,7 +272,7 @@
         }
       }
     }
-    return listWorkspaces.filter((workspace) => selected.has(`${workspace.relay_id}\u0000${workspace.workspace_id}`));
+    return listWorkspaces.filter((workspace) => selected.has(recordKey(workspace)));
   }
 
   $effect(() => {
