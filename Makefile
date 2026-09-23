@@ -16,7 +16,7 @@ WRANGLER_VERSION ?= 4.125.0
 PATH := /opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$(HOME)/.local/bin:$(PATH)
 export PATH
 
-.PHONY: help setup setup-link app-deploy-setup rotate-token quick-start dev-tunnel stable-setup stable-teardown gateway check go-check backend-check shell-check production-path-audit cross-build release-bundle-check frontend-check frontend-browser frontend-browser-release frontend-browser-attention-release relay-plugin service-install service-uninstall service-status service-logs speech-voices web-bundle-check web-release web-release-check web-deploy web-preview mobile-ci-check mobile-retention-check mobile-composite-check mobile-cache-recovery mobile-ci-run mobile-android mobile-ios
+.PHONY: help setup setup-link app-deploy-setup rotate-token quick-start dev-tunnel stable-setup stable-teardown gateway check go-check backend-check shell-check production-path-audit cross-build release-bundle-check frontend-check frontend-browser frontend-browser-local frontend-browser-release frontend-browser-attention-release relay-plugin service-install service-uninstall service-status service-logs speech-voices web-bundle-check web-release web-release-check web-deploy web-preview mobile-ci-check mobile-retention-check mobile-composite-check mobile-cache-recovery mobile-ci-run mobile-android mobile-ios
 
 help:
 	@echo "Common targets:"
@@ -163,6 +163,16 @@ frontend-browser:
 
 frontend-browser-release:
 	frontend/scripts/run-browser-tests.sh ../web
+
+# frontend-browser-local runs the same journeys on this machine without CI and
+# without downloading a browser: Playwright's browsers come from nixpkgs, whose
+# binaries carry the libraries NixOS does not ship in /usr/lib. Enter `nix-shell`
+# for the environment, or just run this target. Override the bundle under test
+# with WEB_ROOT (default: web, the bundle the relay serves) and pass Playwright
+# arguments with PW_ARGS, e.g. PW_ARGS='-g "Ctrl"' or PW_ARGS=--project=chromium-mobile.
+WEB_ROOT ?= web
+frontend-browser-local:
+	scripts/local-browser-tests.sh $(WEB_ROOT) $(PW_ARGS)
 
 frontend-browser-attention-release:
 	HERDR_WEB_ROOT=../web bun run --cwd frontend test:browser:attention
