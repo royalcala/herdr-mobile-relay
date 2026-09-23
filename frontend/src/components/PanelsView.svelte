@@ -15,7 +15,7 @@
     machines,
     sessions,
     agents,
-    onwatch,
+    onread,
     onrefresh,
   }: {
     relays: RelayConfig[];
@@ -23,7 +23,7 @@
     machines: Map<string, Machine[]>;
     sessions: Map<string, HerdrSession[]>;
     agents: Agent[];
-    onwatch: (relayId: string) => Promise<{ fields: WatchFields; events: string[] } | null>;
+    onread: (relayId: string, request: Record<string, unknown>) => Promise<Record<string, any> | null>;
     onrefresh: () => void;
   } = $props();
 
@@ -41,7 +41,7 @@
     let live = true;
     const ask = async () => {
       try {
-        const reading = await onwatch(relayId);
+        const reading = await onread(relayId, { type: 'watchdog_status' });
         if (live && reading) {
           watchFields = reading.fields;
           watchEventsRaw = reading.events;

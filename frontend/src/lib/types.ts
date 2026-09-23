@@ -333,6 +333,10 @@ export interface HerdrSession {
   running: boolean;
   active: boolean;
   dir?: string;
+  /** The label the orchestration registry gives it, or its own name. */
+  label?: string;
+  /** False when the session has no entry: it is running on the defaults. */
+  registered?: boolean;
 }
 
 export type QueueTaskState = 'queued' | 'working' | 'blocked' | 'review' | 'done' | string;

@@ -430,6 +430,8 @@ function normalizeSession(relayId: string, value: Record<string, unknown>): Herd
     running: value.running === true,
     active: value.active === true,
     dir: String(value.dir || ''),
+    label: typeof value.label === 'string' && value.label ? value.label : name,
+    registered: value.registered === true,
   };
 }
 

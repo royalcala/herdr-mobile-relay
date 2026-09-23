@@ -19,7 +19,7 @@
     agents,
     relays,
     connections,
-    onwatch,
+    onread,
     activeSessions,
     onopen,
     onrefresh,
@@ -29,7 +29,7 @@
     agents: Agent[];
     relays: RelayConfig[];
     connections: Map<string, RelayConnectionView>;
-    onwatch: (relayId: string) => Promise<{ fields: WatchFields; events: string[] } | null>;
+    onread: (relayId: string, request: Record<string, unknown>) => Promise<Record<string, any> | null>;
     activeSessions: Map<string, string>;
     onopen: (agent: Agent) => void;
     onrefresh: () => void;
@@ -46,7 +46,7 @@
     let live = true;
     const ask = async () => {
       try {
-        const reading = await onwatch(relayId);
+        const reading = await onread(relayId, { type: 'watchdog_status' });
         if (live && reading) watchFields = reading.fields;
       } catch {
         // Without a reading the roles fall back to the board alone.

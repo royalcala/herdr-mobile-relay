@@ -5842,8 +5842,8 @@ test('names the herdr session filter and lists the sessions by name', async ({ p
     type: 'sessions',
     active: 'default',
     sessions: [
-      { name: 'default', default: true, running: true, active: true },
-      { name: 'work', default: false, running: true, active: false },
+      { name: 'default', default: true, running: true, active: true, label: '1us · plataforma', registered: true },
+      { name: 'work', default: false, running: true, active: false, label: 'work', registered: false },
     ],
   });
   // The filter says what it is and names each session: a phone must not have to
@@ -5851,6 +5851,9 @@ test('names the herdr session filter and lists the sessions by name', async ({ p
   await expect(page.locator('.session-picker').getByText('Sessions', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mirror session default (current)' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mirror session work' })).toBeVisible();
+  // The label comes from the orchestration registry, so a session reads as what
+  // it is instead of as its internal name.
+  await expect(page.locator('.session-picker')).toContainText('1us · plataforma');
 });
 
 test('refreshes agents on return home and preserves shared terminal behavior', async ({ page }) => {

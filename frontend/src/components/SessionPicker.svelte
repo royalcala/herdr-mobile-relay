@@ -52,12 +52,12 @@
             class="filter-chip session-chip"
             class:active
             aria-pressed={active}
-            aria-label={`Mirror session ${session.name}${active ? ' (current)' : ''}`}
+            aria-label={`Mirror session ${session.name}${active ? ' (current)' : ''}${session.label && session.label !== session.name ? ` · ${session.label}` : ''}`}
             disabled={!session.running || switching !== ''}
             onclick={() => pick(row.relay.id, session.name)}
           >
             <span class={`session-dot ${session.running ? 'running' : 'stopped'}`} aria-hidden="true"></span>
-            <span class="filter-chip-label">{session.name}</span>
+            <span class="filter-chip-label">{session.label || session.name}</span>
             {#if active}<span class="session-current">mirroring</span>{/if}
             {#if !session.running}<span class="session-current">stopped</span>{/if}
           </button>

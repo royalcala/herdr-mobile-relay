@@ -91,13 +91,12 @@
   const typedPushTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const automaticUpdateChecks = new Set<string>();
   const awaitedDeployments = new Set<string>();
-  // The watchdog's state is read on demand: the panels are loaded on demand too,
-  // so their plumbing stays out of the payload every phone downloads.
-  async function readWatchdog(relayId: string): Promise<{ fields: Record<string, string>; events: string[] } | null> {
-    const result = await relayStore.sendCommand(relayId, { type: 'watchdog_status' });
-    const data = result.data as { fields?: Record<string, string>; events?: string[] } | undefined;
-    if (!data) return null;
-    return { fields: data.fields || {}, events: data.events || [] };
+  // Reads the panels and the per-session data ask for are made on demand: those
+  // views are loaded on demand too, so their plumbing stays out of the payload
+  // every phone downloads to show the agents.
+  async function readRelay(relayId: string, request: Record<string, unknown>) {
+    const result = await relayStore.sendCommand(relayId, request);
+    return (result.data as Record<string, any>) || null;
   }
 
   let visibilityRevision = $state(0);
@@ -813,7 +812,7 @@
       tasks={$queueTasks}
       board={$queueBoard}
       agents={$agents}
-      onwatch={readWatchdog}
+      onread={readRelay}
       activeSessions={$activeHerdrSessions}
       relays={$relays}
       connections={$connections}
@@ -828,7 +827,7 @@
       machines={$machines}
       sessions={$herdrSessions}
       agents={$agents}
-      onwatch={readWatchdog}
+      onread={readRelay}
       onrefresh={() => relayStore.requestAgents()}
     />
   {:else if $currentView.view === 'sessions' && sessionsComponent}
@@ -839,6 +838,7 @@
       activeSessions={$activeHerdrSessions}
       connections={$connections}
       onselect={(relayId, name) => { void relayStore.selectSession(relayId, name); }}
+      onread={readRelay}
     />
   {:else if $currentView.view === 'orchestrator' || $currentView.view === 'panels' || $currentView.view === 'sessions'}
     <main class="page terminal-loading" aria-label="Opening section">
