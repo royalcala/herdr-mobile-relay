@@ -40,13 +40,16 @@ type Config struct {
 	// QueuePath is the versioned task board (queue/tasks.json) the phone shows
 	// next to the live agents. Relative paths resolve against the working
 	// directory, which for the repo checkout is where the board lives.
-	QueuePath    string
-	PollInterval float64
-	RuntimeDir   string
-	LogFormat    string
-	LogLevel     slog.Level
-	ReleaseRoot  string
-	ServiceName  string
+	QueuePath string
+	// WatchStatusPath is the watchdog's own state file (manager-watch.status).
+	// The phone's watchdog panel reads it; the relay only hands it over.
+	WatchStatusPath string
+	PollInterval    float64
+	RuntimeDir      string
+	LogFormat       string
+	LogLevel        slog.Level
+	ReleaseRoot     string
+	ServiceName     string
 
 	// GatewayURL is the configured tie-break leader, kept equal to
 	// GatewayURLs[0] so readers that only know one gateway keep working. The
@@ -142,6 +145,13 @@ func Load() (*Config, error) {
 		cfg.QueuePath = filepath.Join("queue", "tasks.json")
 	}
 
+	if cfg.WatchStatusPath == "" {
+		cfg.WatchStatusPath = os.Getenv("HERDR_WATCH_STATUS_PATH")
+	}
+	if cfg.WatchStatusPath == "" {
+		cfg.WatchStatusPath = filepath.Join(stateHome(), "manager-watch.status")
+	}
+
 	cfg.RuntimeDir = resolveRuntimeDir(cfg.ConfigHome)
 	cfg.CacheDir = filepath.Join(cacheHome, "herdr-mobile-relay")
 
@@ -191,6 +201,15 @@ func validSessionName(name string) bool {
 		}
 	}
 	return true
+}
+
+// stateHome is where the machine keeps state that outlives a login: the watchdog
+// writes its status file here.
+func stateHome() string {
+	if configured := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); configured != "" {
+		return configured
+	}
+	return filepath.Join(homeDir(), ".local", "state")
 }
 
 func (c *Config) validate() error {

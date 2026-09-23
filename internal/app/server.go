@@ -1247,6 +1247,16 @@ func (s *Server) Run(ctx context.Context) error {
 			s.requestAgentRefresh(client)
 		case "select_session":
 			s.handleSelectSession(client, inbound, action)
+		case "watchdog_status":
+			// Read-only and on demand: the panels ask for it, so their plumbing
+			// never sits in the payload every phone downloads to show agents.
+			s.publishCommandResult(client, &coordinator.CommandResult{
+				RequestID: inbound.RequestID,
+				Action:    action,
+				OK:        true,
+				Phase:     "completed",
+				Data:      s.watchPayload(),
+			})
 		case "webrtc_offer", "webrtc_ice", "webrtc_close":
 			s.handleWebRTCSignal(commandCtx, client, action, inbound.RequestID, msg)
 		default:
