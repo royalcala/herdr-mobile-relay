@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "updated_at": "2026-09-22T20:40:00-06:00",
+  "notes": "Cola versionada del tablero orquestador. La PWA la cruza con el estado VIVO de herdr por `owner` (nombre del agente) y por `branch` (los worktrees llevan la rama en el path). Estados: queued | working | blocked | review | done. `waits_on_human` marca lo que sólo puede mover una persona.",
+  "tasks": [
+    {
+      "id": "pwa-machines-ui",
+      "title": "PWA: home machine-first + espejo de máquinas",
+      "repo": "herdr-mobile-relay",
+      "owner": "relay-pwa-ui",
+      "state": "working",
+      "branch": "feat/pwa-machines-ui",
+      "last_commit": "d7df35b",
+      "notes": "Bundle web reconstruido y pusheado."
+    },
+    {
+      "id": "relay-sessions-selector",
+      "title": "Relay: selector de sesiones de herdr",
+      "repo": "herdr-mobile-relay",
+      "owner": "relay-pwa-ui",
+      "state": "working",
+      "branch": "feat/pwa-machines-ui",
+      "notes": "Backend listo (listar y cambiar de sesión); falta verlo en el móvil."
+    },
+    {
+      "id": "orchestrator-board",
+      "title": "PWA: tablero orquestador (cola × agentes × compuerta)",
+      "repo": "herdr-mobile-relay",
+      "owner": "relay-pwa-ui",
+      "state": "working",
+      "branch": "feat/pwa-machines-ui",
+      "notes": "Cruza queue/tasks.json con el estado vivo de herdr y con producción."
+    },
+    {
+      "id": "turso-fase2-plano-tenant",
+      "title": "Turso Fase 2: spec del plano de tenant",
+      "repo": "1us",
+      "owner": "manager-v3",
+      "state": "review",
+      "branch": "feat/turso-fase2-spec",
+      "last_commit": "f875242",
+      "waits_on_human": true,
+      "blocked_by": "5 decisiones del humano (H1 vs G1, sitio del token, best-effort vs confirmar, BYO a rangos privados, exigir paridad FTS5)",
+      "notes": "Spec + plan de tareas listos; sin implementar."
+    },
+    {
+      "id": "relay-mirror-ghosts",
+      "title": "Espejo: quitar panes que la máquina ya no aloja",
+      "repo": "herdr-mobile-relay",
+      "owner": "relay-espejo",
+      "state": "done",
+      "branch": "fix/mirror-ghosts",
+      "last_commit": "fe7fcb3",
+      "notes": "Mergeado en la base de la PWA."
+    },
+    {
+      "id": "turso-t2-motor",
+      "title": "Turso T2: motor en us-session",
+      "repo": "1us",
+      "owner": "t2-motor-turso",
+      "state": "done",
+      "branch": "feat/turso-t2"
+    },
+    {
+      "id": "turso-t4-lease",
+      "title": "Turso T4: lease del escritor en el DO",
+      "repo": "1us",
+      "owner": "t4-lease-do",
+      "state": "done",
+      "branch": "feat/turso-t4"
+    },
+    {
+      "id": "remobi-fork",
+      "title": "remobi: fork como fuente + scroll al final + toggle",
+      "repo": "remobi",
+      "owner": "relay-pwa-ui",
+      "state": "done",
+      "branch": "main",
+      "last_commit": "f91671f",
+      "notes": "Servicio apuntando a la build del fork; túnel con Cloudflare Access."
+    },
+    {
+      "id": "infra-remote-builders",
+      "title": "infra-core: builders Nix remotos",
+      "repo": "infra-core",
+      "owner": "remote-builders",
+      "state": "done",
+      "branch": "remote-builders"
+    },
+    {
+      "id": "wake-visible-panel",
+      "title": "herdr-manager-wake: panel de estado visible",
+      "repo": "herdr-manager-wake",
+      "owner": "watch-visible",
+      "state": "queued",
+      "branch": "feat/watch-visible"
+    }
+  ]
+}

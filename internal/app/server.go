@@ -115,12 +115,16 @@ type Server struct {
 	paneSizeM        *panesize.Manager
 	dispatcher       *coordinator.Dispatcher
 	machinesM        *machines.Manager
-	updateM          *relayupdate.Manager
-	appDeployM       *appdeploy.Manager
-	hybrid           *hybridTransport
-	uploadM          *upload.Manager
-	deviceAuth       *deviceauth.Store
-	initErr          error
+	// eventClient is kept so a session switch can re-point the event stream at
+	// the new socket; sessionMu serialises those switches.
+	eventClient *herdr.EventClient
+	sessionMu   sync.Mutex
+	updateM     *relayupdate.Manager
+	appDeployM  *appdeploy.Manager
+	hybrid      *hybridTransport
+	uploadM     *upload.Manager
+	deviceAuth  *deviceauth.Store
+	initErr     error
 
 	mu        sync.RWMutex
 	ready     bool
@@ -1234,6 +1238,8 @@ func (s *Server) Run(ctx context.Context) error {
 			}
 		case "refresh_agents":
 			s.requestAgentRefresh(client)
+		case "select_session":
+			s.handleSelectSession(client, inbound, action)
 		case "webrtc_offer", "webrtc_ice", "webrtc_close":
 			s.handleWebRTCSignal(commandCtx, client, action, inbound.RequestID, msg)
 		default:
@@ -1383,6 +1389,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	startBackground(func() { s.herdrC.RunCapabilityRefresh(ctx, 30*time.Second) })
 	eventClient := herdr.NewEventClient(s.cfg.SocketPath)
+	s.eventClient = eventClient
 	eventClient.SetWorkspaceReorderedCapability(
 		s.herdrC.ShouldAttemptWorkspaceReordered,
 		s.herdrC.NoteWorkspaceReorderedSupported,
@@ -1392,6 +1399,8 @@ func (s *Server) Run(ctx context.Context) error {
 		s.herdrC.InvalidateLiveCapabilities()
 	})
 	startBackground(func() { s.poller.RunEvents(ctx, eventClient) })
+	startBackground(func() { s.watchSessions(ctx) })
+	startBackground(func() { s.watchQueue(ctx) })
 	startBackground(func() { s.captureHistoryLoop(ctx) })
 	startBackground(func() { s.paneSizeM.Run(ctx) })
 	profileSignals := make(chan os.Signal, 1)
@@ -2710,6 +2719,11 @@ func (s *Server) sendConnectionSnapshot(client *transport.ClientConn) {
 		"activities": s.recentActivities(500),
 	})
 	s.hub.Send(client, inventoryStatusMessage(inventory))
+	// The session list and the task board come after the topology contract the
+	// phone already relies on: the snapshot's last message stays the inventory
+	// status, and these two ride behind it.
+	s.hub.Send(client, s.sessionsPayload(context.Background()))
+	s.hub.Send(client, s.queuePayload())
 }
 
 func (s *Server) requestAgentRefresh(client *transport.ClientConn) {

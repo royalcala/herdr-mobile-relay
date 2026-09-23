@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -193,10 +194,39 @@ func (b *limitedBuffer) String() string { return b.buf.String() }
 
 type Client struct {
 	bin          string
+	mu           sync.RWMutex
 	socketPath   string
 	sem          chan struct{}
 	api          *socketAPIClient
 	capabilities *capabilityManager
+}
+
+// SocketPath is the socket this client currently mirrors. Guarded because the
+// relay can re-point a live client at another herdr session.
+func (c *Client) SocketPath() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.socketPath
+}
+
+// SetSocketPath moves this client to another herdr session. Both the CLI
+// environment and the socket API move together: everything the relay does for a
+// session (inventory, pane reads, mutations) goes through this client.
+func (c *Client) SetSocketPath(socketPath string) {
+	if c == nil {
+		return
+	}
+	socketPath = strings.TrimSpace(socketPath)
+	if socketPath == "" {
+		return
+	}
+	c.mu.Lock()
+	c.socketPath = socketPath
+	c.mu.Unlock()
+	c.api.SetPath(socketPath)
 }
 
 func NewClient(bin, socketPath string) *Client {
@@ -846,7 +876,7 @@ func (c *Client) runCommand(parent context.Context, args ...string) ([]byte, err
 	}
 
 	cmd := exec.Command(c.bin, args...)
-	cmd.Env = append(cmd.Environ(), "HERDR_SOCKET_PATH="+c.socketPath)
+	cmd.Env = append(cmd.Environ(), "HERDR_SOCKET_PATH="+c.SocketPath())
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Process-group termination owns cancellation. WaitDelay is the final
 	// backstop for inherited stdout/stderr descriptors held by a descendant

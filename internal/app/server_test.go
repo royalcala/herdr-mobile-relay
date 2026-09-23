@@ -996,6 +996,12 @@ func TestProductionInventoryPublisherOrdersRefreshAndRegistrationBarriers(t *tes
 		if status["type"] != "inventory_status" || status["state"] != state {
 			t.Fatalf("handshake status = %#v, want %q", status, state)
 		}
+		// The snapshot ends with the session list and the task board.
+		for _, kind := range []string{"sessions", "queue"} {
+			if tail := readMessage(conn); tail["type"] != kind {
+				t.Fatalf("handshake tail = %#v, want %q", tail, kind)
+			}
+		}
 		return state
 	}
 	conn := dial()
@@ -1245,6 +1251,14 @@ func TestCommittedInventoryPublicationRepairsZeroListenerRefreshAndReconnect(t *
 	assertTopology(initialWorkspaces)
 	_ = readMessage(conn) // activity_history
 	assertReady(readMessage(conn))
+	// The connection snapshot also carries the herdr session list and the task
+	// board. They ride behind the topology contract, so a reader that stops at
+	// the inventory status has to consume them before the next publication.
+	for _, expected := range []string{"sessions", "queue"} {
+		if message := readMessage(conn); message["type"] != expected {
+			t.Fatalf("handshake tail = %#v, want %q", message, expected)
+		}
+	}
 
 	server.state.MarkInventoryFailure(errors.New("server_not_running"))
 	publishInventoryForTest(t, server)
@@ -1575,6 +1589,14 @@ func TestProductionEventInventoryRecoveryDrainsRefreshAcrossReconnect(t *testing
 			t.Fatal("websocket client was not registered")
 		default:
 			time.Sleep(time.Millisecond)
+		}
+	}
+	// The connection snapshot also carries the herdr session list and the task
+	// board. They ride behind the topology contract, so a reader that stops at
+	// the inventory status has to consume them before the next publication.
+	for _, expected := range []string{"sessions", "queue"} {
+		if message := readMessage(conn); message["type"] != expected {
+			t.Fatalf("handshake tail (event recovery) = %#v, want %q", message, expected)
 		}
 	}
 	server.requestAgentRefresh(client)

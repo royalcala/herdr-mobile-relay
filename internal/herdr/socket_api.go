@@ -47,8 +47,35 @@ func newSocketAPIClient(path string) *socketAPIClient {
 	return &socketAPIClient{path: path}
 }
 
+// Path is the socket this client talks to. Guarded because the relay can
+// re-point a live client at another session's socket.
+func (c *socketAPIClient) Path() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.path
+}
+
+// SetPath re-points the client at another socket and drops any connection held
+// to the previous one, so nothing is read from the session we just left.
+func (c *socketAPIClient) SetPath(path string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+		c.reader = nil
+	}
+	c.path = path
+}
+
 func (c *socketAPIClient) available(ctx context.Context) bool {
-	if c == nil || c.path == "" {
+	if c.Path() == "" {
 		return false
 	}
 	checkCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
@@ -72,7 +99,7 @@ func (c *socketAPIClient) requestUnary(
 	method string,
 	params map[string]any,
 ) (json.RawMessage, bool, error) {
-	if c == nil || c.path == "" {
+	if c.Path() == "" {
 		return nil, false, errors.New("Herdr socket path is unavailable")
 	}
 	requestCtx := ctx
@@ -82,7 +109,7 @@ func (c *socketAPIClient) requestUnary(
 	}
 	defer cancel()
 
-	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.path)
+	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.Path())
 	if err != nil {
 		return nil, false, fmt.Errorf("connect to Herdr socket API: %w", err)
 	}
@@ -186,7 +213,7 @@ func (c *socketAPIClient) readPane(
 	format string,
 	source string,
 ) (PaneRead, error) {
-	if c == nil || c.path == "" {
+	if c.Path() == "" {
 		return PaneRead{}, errors.New("Herdr socket path is unavailable")
 	}
 	if source == "recent-unwrapped" {

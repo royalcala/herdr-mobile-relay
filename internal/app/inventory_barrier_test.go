@@ -217,7 +217,7 @@ func TestProductionInventoryOutcomesAtPublicationBarriers(t *testing.T) {
 					}
 					handshake := func(conn *websocket.Conn, want string, gen int) {
 						t.Helper()
-						for index, kind := range []string{"push_config", "agents", "workspaces", "activity_history", "inventory_status"} {
+						for index, kind := range []string{"push_config", "agents", "workspaces", "activity_history", "inventory_status", "sessions", "queue"} {
 							message := read(conn)
 							if message["type"] != kind {
 								t.Fatalf("handshake %d=%#v", index, message)
@@ -226,7 +226,7 @@ func TestProductionInventoryOutcomesAtPublicationBarriers(t *testing.T) {
 								assertStatus(message["inventory"].(map[string]any), want)
 							} else if kind == "inventory_status" {
 								assertStatus(message, want)
-							} else {
+							} else if kind == "agents" || kind == "workspaces" {
 								assertRows(message, gen)
 							}
 						}

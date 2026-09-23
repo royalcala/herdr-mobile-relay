@@ -132,6 +132,39 @@ func NewState(logger *slog.Logger) *State {
 	}
 }
 
+// Reset forgets everything learned from the session currently being mirrored.
+// The relay calls it when it switches to another herdr session: the old
+// session's agents must not linger as ghosts on the phone, and its pane
+// generations must not authorise reads against panes that no longer exist.
+//
+// The revision counters keep moving so the next snapshot reads as a change
+// rather than as a repeat of the old session's view.
+func (s *State) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agents = make(map[string]*AgentState)
+	s.workspaces = nil
+	s.revision = make(map[string]int64)
+	s.contentRev = make(map[string]int64)
+	s.attentionRev = make(map[string]int64)
+	s.prevStatus = make(map[string]string)
+	s.unseenDone = make(map[string]bool)
+	s.ackDone = make(map[string]bool)
+	s.finishedNotif = make(map[string]bool)
+	s.completionRev = make(map[string]int64)
+	s.generation = make(map[string]int64)
+	s.pendingEvents = make(map[string]pendingEvent)
+	s.customAnswers = make(map[string]map[string]string)
+	s.triage = make(map[string]triageRecord)
+	s.topologyGen++
+	s.revCounter++
+	s.inventoryReady = false
+	s.inventoryErrorCode = ""
+	s.inventoryMessage = ""
+	s.lastAttemptAt = time.Time{}
+	s.lastSuccessAt = time.Time{}
+}
+
 // RecordCustomAnswer remembers the free text typed for a question so review
 // summaries can show it instead of the terminal's placeholder. Memory is
 // process-local; a relay restart falls back to the placeholder.

@@ -33,12 +33,16 @@ type Config struct {
 	WebRoot        string
 	HerdrBin       string
 	SocketPath     string
-	PollInterval   float64
-	RuntimeDir     string
-	LogFormat      string
-	LogLevel       slog.Level
-	ReleaseRoot    string
-	ServiceName    string
+	// QueuePath is the versioned task board (queue/tasks.json) the phone shows
+	// next to the live agents. Relative paths resolve against the working
+	// directory, which for the repo checkout is where the board lives.
+	QueuePath    string
+	PollInterval float64
+	RuntimeDir   string
+	LogFormat    string
+	LogLevel     slog.Level
+	ReleaseRoot  string
+	ServiceName  string
 
 	// GatewayURL is the configured tie-break leader, kept equal to
 	// GatewayURLs[0] so readers that only know one gateway keep working. The
@@ -119,6 +123,13 @@ func Load() (*Config, error) {
 
 	if cfg.SocketPath == "" {
 		cfg.SocketPath = filepath.Join(cfg.ConfigHome, "herdr", "herdr.sock")
+	}
+
+	if cfg.QueuePath == "" {
+		cfg.QueuePath = os.Getenv("HERDR_QUEUE_PATH")
+	}
+	if cfg.QueuePath == "" {
+		cfg.QueuePath = filepath.Join("queue", "tasks.json")
 	}
 
 	cfg.RuntimeDir = resolveRuntimeDir(cfg.ConfigHome)

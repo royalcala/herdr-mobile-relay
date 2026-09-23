@@ -121,7 +121,12 @@ type TopologySnapshot struct {
 }
 
 type EventClient struct {
-	path                          string
+	mu   sync.RWMutex
+	path string
+	// activeConn is the socket of the running subscription. Closing it is how a
+	// session switch makes the event loop redial: the reader fails and the poller
+	// reconnects against Path().
+	activeConn                    net.Conn
 	supportsWorkspaceReordered    func() bool
 	workspaceReorderedSupported   func()
 	workspaceReorderedUnsupported func()
@@ -130,6 +135,46 @@ type EventClient struct {
 
 func NewEventClient(path string) *EventClient {
 	return &EventClient{path: path}
+}
+
+// Path is the socket this client subscribes to.
+func (c *EventClient) Path() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.path
+}
+
+// SetPath re-points the event stream at another herdr session and drops the
+// running subscription, so the loop resubscribes against the new socket instead
+// of keeping the old session's events flowing.
+func (c *EventClient) SetPath(path string) {
+	if c == nil {
+		return
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return
+	}
+	c.mu.Lock()
+	c.path = path
+	conn := c.activeConn
+	c.activeConn = nil
+	c.mu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func (c *EventClient) setActive(conn net.Conn) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.activeConn = conn
+	c.mu.Unlock()
 }
 
 func (c *EventClient) SetWorkspaceReorderedProbe(probe func() bool) {
@@ -212,12 +257,12 @@ func isUnsupportedSubscription(err error) bool {
 }
 
 func (c *EventClient) subscribeWith(ctx context.Context, includeWorkspaceReordered bool) (*EventStream, error) {
-	if c == nil || c.path == "" {
+	if c.Path() == "" {
 		return nil, errors.New("Herdr socket path is unavailable")
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.path)
+	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.Path())
 	if err != nil {
 		return nil, fmt.Errorf("connect to Herdr events socket: %w", err)
 	}
@@ -289,6 +334,7 @@ func (c *EventClient) subscribeWith(ctx context.Context, includeWorkspaceReorder
 		return nil, fmt.Errorf("clear Herdr events socket deadline: %w", err)
 	}
 	stream := &EventStream{conn: conn, queue: newEventQueue()}
+	c.setActive(conn)
 	go stream.readLoop(reader)
 	return stream, nil
 }
@@ -298,12 +344,12 @@ func isPreDispatchSubscriptionError(id, code, message string, includeWorkspaceRe
 		strings.Contains(message, "unknown variant `workspace.reordered`")
 }
 func (c *EventClient) snapshot(ctx context.Context) (SessionSnapshot, error) {
-	if c == nil || c.path == "" {
+	if c.Path() == "" {
 		return SessionSnapshot{}, errors.New("Herdr socket path is unavailable")
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.path)
+	conn, err := (&net.Dialer{}).DialContext(requestCtx, "unix", c.Path())
 	if err != nil {
 		return SessionSnapshot{}, fmt.Errorf("connect to Herdr snapshot socket: %w", err)
 	}
