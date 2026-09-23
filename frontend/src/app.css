@@ -1097,7 +1097,7 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .board-card.state-human { border-left-color: var(--warning); }
 .board-card.state-blocked { border-left-color: var(--danger); }
 .board-card.state-working { border-left-color: var(--primary); }
-.board-card.state-done { border-left-color: var(--success); opacity: .8; }
+.board-card.state-done { border-left-color: var(--success); }
 .board-card.off-board { cursor: pointer; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .board-card-head { align-items: baseline; display: flex; gap: .5rem; justify-content: space-between; }
 .board-card-head h3 { font-size: .82rem; margin: 0; }
@@ -1108,17 +1108,15 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .board-state.state-done { color: var(--success); }
 .board-meta { color: var(--muted); display: flex; flex-wrap: wrap; font-size: .64rem; gap: .45rem; margin: 0; }
 .board-repo { color: var(--foreground); font-weight: 600; }
-.board-branch, .board-commit { font-family: ui-monospace, monospace; }
 .board-owner { color: var(--primary); }
 .board-meta-inline { color: var(--muted); font-size: .66rem; }
 .board-blocked { font-size: .72rem; margin: 0; }
 .board-blocked strong { color: var(--danger); }
 .board-notes { color: var(--muted); font-size: .7rem; margin: 0; }
-.board-unmatched { color: var(--muted); font-size: .66rem; font-style: italic; margin: 0; }
+.board-unmatched { color: var(--muted); font-size: .66rem; margin: 0; }
 .board-agents { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .15rem; }
 .board-agent { align-items: center; background: var(--secondary); border: 1px solid var(--border); border-radius: 999px; color: var(--foreground); cursor: pointer; display: inline-flex; font-size: .66rem; gap: .35rem; min-height: 1.9rem; padding: .25rem .55rem; }
 .board-agent-state { color: var(--muted); font-size: .58rem; text-transform: uppercase; }
-.board-agent-machine { color: var(--primary); font-size: .55rem; text-transform: uppercase; }
 .board-list { display: flex; flex-direction: column; gap: .3rem; list-style: none; margin: 0; padding: 0; }
 .board-list li { align-items: baseline; display: flex; flex-wrap: wrap; gap: .45rem; font-size: .7rem; }
 .agent-dot { border-radius: 999px; display: inline-block; height: .45rem; width: .45rem; }
@@ -1128,10 +1126,6 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .agent-dot.status-done { background: var(--success); }
 .agent-dot.status-waiting { background: var(--warning); }
 
-/* --- One-tap control combinations ---------------------------------------- */
-.term-combos { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .35rem; overflow-x: auto; padding: .4rem max(.55rem, env(safe-area-inset-right)) .4rem max(.55rem, env(safe-area-inset-left)); scrollbar-width: none; }
-.term-combos::-webkit-scrollbar { display: none; }
-.term-combos > * { flex: 0 0 auto; }
 
 /* --- Home tabs ------------------------------------------------------------ */
 .home-tabs { display: flex; gap: .3rem; margin-bottom: .6rem; overflow-x: auto; scrollbar-width: none; }

@@ -43,9 +43,7 @@
       <div class="filter-row session-row">
         <!-- Say what these chips are: herdr sessions, not machines or agents. -->
         <span class="session-relay">Sessions</span>
-        {#if relays.length > 1}
-          <span class="session-relay">{row.relay.label || row.relay.id}</span>
-        {/if}
+        <span class="session-relay">{row.relay.label || row.relay.id}</span>
         {#each row.list as session (session.name)}
           {@const active = session.name === (activeSessions.get(row.relay.id) || '')
             || session.active}

@@ -91,6 +91,15 @@
   const typedPushTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
   const automaticUpdateChecks = new Set<string>();
   const awaitedDeployments = new Set<string>();
+  // The watchdog's state is read on demand: the panels are loaded on demand too,
+  // so their plumbing stays out of the payload every phone downloads.
+  async function readWatchdog(relayId: string): Promise<{ fields: Record<string, string>; events: string[] } | null> {
+    const result = await relayStore.sendCommand(relayId, { type: 'watchdog_status' });
+    const data = result.data as { fields?: Record<string, string>; events?: string[] } | undefined;
+    if (!data) return null;
+    return { fields: data.fields || {}, events: data.events || [] };
+  }
+
   let visibilityRevision = $state(0);
   // The four faces of the home; every other view is something you opened.
   const homeSection = $derived.by(() => {
@@ -804,6 +813,8 @@
       tasks={$queueTasks}
       board={$queueBoard}
       agents={$agents}
+      onwatch={readWatchdog}
+      activeSessions={$activeHerdrSessions}
       relays={$relays}
       connections={$connections}
       onopen={openAgent}
@@ -817,6 +828,7 @@
       machines={$machines}
       sessions={$herdrSessions}
       agents={$agents}
+      onwatch={readWatchdog}
       onrefresh={() => relayStore.requestAgents()}
     />
   {:else if $currentView.view === 'sessions' && sessionsComponent}

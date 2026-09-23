@@ -1,6 +1,8 @@
 <script lang="ts">
   import { buildOrchestration, liveStatus, type CrossedTask } from '$lib/orchestration';
   import type { Agent, QueueBoard, QueueTask, RelayConfig, RelayConnectionView } from '$lib/types';
+  import { agentRoles } from '$lib/roles';
+  import type { WatchFields } from '$lib/watch';
 
   /**
    * The thin board: the versioned queue crossed with what herdr is doing right
@@ -17,6 +19,8 @@
     agents,
     relays,
     connections,
+    onwatch,
+    activeSessions,
     onopen,
     onrefresh,
   }: {
@@ -25,9 +29,44 @@
     agents: Agent[];
     relays: RelayConfig[];
     connections: Map<string, RelayConnectionView>;
+    onwatch: (relayId: string) => Promise<{ fields: WatchFields; events: string[] } | null>;
+    activeSessions: Map<string, string>;
     onopen: (agent: Agent) => void;
     onrefresh: () => void;
   } = $props();
+
+  // The watchdog names the agent it steers: the manager is not a guess.
+  let watchFields = $state<WatchFields>({});
+  const watchRelayId = $derived(
+    relays.find((relay) => connections.get(relay.id)?.status === 'connected')?.id || relays[0]?.id || '',
+  );
+  $effect(() => {
+    const relayId = watchRelayId;
+    if (!relayId) return;
+    let live = true;
+    const ask = async () => {
+      try {
+        const reading = await onwatch(relayId);
+        if (live && reading) watchFields = reading.fields;
+      } catch {
+        // Without a reading the roles fall back to the board alone.
+      }
+    };
+    void ask();
+    const timer = setInterval(() => { void ask(); }, 10_000);
+    return () => { live = false; clearInterval(timer); };
+  });
+  const managerName = $derived(watchFields.manager || '');
+  const roleRows = $derived(agentRoles(agents, tasks, managerName));
+  const sessionLabels = $derived([...activeSessions.values()].filter(Boolean));
+  const sessionLabel = $derived(sessionLabels.length ? sessionLabels.join(', ') : 'not reported yet');
+
+  const roleLabel: Record<string, string> = {
+    manager: 'orchestrator',
+    work: 'work front',
+    blocked: 'blocked',
+    waiting: 'waiting',
+  };
 
   const boardView = $derived(buildOrchestration(tasks, agents));
 
@@ -111,7 +150,6 @@
               <span class={`agent-dot status-${String(agent.status || 'idle').toLowerCase()}`} aria-hidden="true"></span>
               <span class="board-agent-name">{agentLabel(agent)}</span>
               <span class="board-agent-state">{statusLabel[String(agent.status || '').toLowerCase()] || agent.status || 'idle'}</span>
-              {#if agent.remote}<span class="board-agent-machine">remote</span>{/if}
             </button>
           {/each}
         </div>
@@ -123,6 +161,27 @@
       {/if}
     </article>
   {/snippet}
+
+  <section class="board-section" aria-labelledby="board-roles">
+    <h2 id="board-roles">Roles</h2>
+    <p class="board-hint">
+      Manager <strong>{managerName || 'unknown'}</strong> · session <strong>{sessionLabel}</strong>
+    </p>
+    {#each roleRows as row (row.agent.relay_id + row.agent.pane_id)}
+      <button type="button" class={`board-card off-board role-${row.role}`} onclick={() => onopen(row.agent)}>
+        <span class={`agent-dot status-${String(row.agent.status || 'idle').toLowerCase()}`} aria-hidden="true"></span>
+        <span class="board-agent-name">{row.agent.name || row.agent.tab_label || row.agent.pane_id}</span>
+        <span class={`board-state state-${row.role === 'manager' ? 'working' : row.role === 'blocked' ? 'blocked' : row.role === 'work' ? 'working' : 'done'}`}>
+          {roleLabel[row.role] || row.role}
+        </span>
+        {#if row.task}
+          <span class="board-meta-inline">{row.task.title} · {row.task.state}{row.task.branch ? ` · ${row.task.branch}` : ''}</span>
+        {:else}
+          <span class="board-meta-inline">no open row on the board</span>
+        {/if}
+      </button>
+    {/each}
+  </section>
 
   <section class="board-section" aria-labelledby="board-human">
     <h2 id="board-human">Waiting on a person</h2>

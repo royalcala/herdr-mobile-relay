@@ -5802,7 +5802,7 @@ test('names the herdr session filter and lists the sessions by name', async ({ p
   });
   // The filter says what it is and names each session: a phone must not have to
   // guess whether a chip is a machine, an agent or a herdr session.
-  await expect(page.getByText('Sessions', { exact: true })).toBeVisible();
+  await expect(page.locator('.session-picker').getByText('Sessions', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mirror session default (current)' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mirror session work' })).toBeVisible();
 });
@@ -6603,15 +6603,14 @@ test('interrupts and sends function keys from the terminal pad', async ({ page }
   // The pad carries no dedicated Ctrl+C button: interrupting is the armed Ctrl
   // chord, which keeps the whole pad on one row.
   await expect(page.getByRole('button', { name: 'Ctrl+C' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Ctrl', exact: true }).click();
+  const ctrlKey = page.getByRole('button', { name: 'Ctrl', exact: true });
+  await ctrlKey.click();
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('textbox', { name: 'Modifier shortcut character' }).press('c');
   await expect.poll(() => keysSent(['ctrl+c'])).toBe(1);
 
-  // Ctrl stays armed for repeated chords, so the pad must be disarmed before an
-  // unmodified key: otherwise F5 would leave as ctrl+f5.
-  const ctrlKey = page.getByRole('button', { name: 'Ctrl', exact: true });
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await ctrlKey.click();
+  // The latch carries exactly one key and is spent by the chord it sent, so the
+  // F5 that follows leaves as a plain f5 rather than ctrl+f5.
   await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
 
   await page.getByRole('button', { name: 'Function keys' }).first().click();
