@@ -241,3 +241,34 @@ To revert the whole change: restore the dated backup over `$CLOUDFLARED_CONFIG`
 and restart the unit; the DNS record and Access app are independent and can be
 left or deleted separately.
 
+### Retired: the remobi trial (23 September 2026)
+
+remobi was tried here as a second way to reach the terminal and dropped in
+favour of this app. The trial's two hostnames (`remobi.` and
+`remobi-laptop-rao.`) were taken down, in this order:
+
+```bash
+systemctl --user stop remobi.service && systemctl --user disable remobi.service
+rm ~/.config/systemd/user/remobi.service        # had no drop-in
+CFG="$CLOUDFLARED_CONFIG"
+cp -a "$CFG" "$CFG.bak-$(date +%Y%m%d-%H%M%S)"
+# restore the pre-trial config, which is the relay rule plus the catch-all
+cp -a "$CFG.bak-20260922-171407" "$CFG"
+cloudflared tunnel --config "$CFG" ingress validate
+cloudflared tunnel --config "$CFG" ingress rule https://relay-laptop-rao.1us.work/
+systemctl --user restart herdr-mobile-relay.service
+# then, over the Cloudflare API: delete the two Access applications
+# (self_hosted, one per hostname) and the two proxied CNAMEs that pointed at
+# this tunnel.
+```
+
+Two details worth keeping: the ingress rule for the relay was diffed against the
+pre-trial backup and left byte-identical, with the catch-all still last; and
+`cloudflared` does not reload a changed config, so the unit restart is what
+actually applies it. After the retirement both hostnames answer **404 from the
+catch-all** — never the app, and never an Access redirect, because a redirect
+would mean the hostname still had an application in front of it.
+
+`~/remobi-trial` and the `royalcala/remobi` fork were left on disk, retired but
+not deleted: nothing routes to them any more.
+
