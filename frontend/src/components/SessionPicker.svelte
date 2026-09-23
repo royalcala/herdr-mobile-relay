@@ -37,11 +37,15 @@
   }
 </script>
 
-{#if total > 1}
+{#if total > 0}
   <div class="session-picker" role="group" aria-label="Herdr sessions">
     {#each rows as row (row.relay.id)}
       <div class="filter-row session-row">
-        <span class="session-relay">{row.relay.label || row.relay.id}</span>
+        <!-- Say what these chips are: herdr sessions, not machines or agents. -->
+        <span class="session-relay">Sessions</span>
+        {#if relays.length > 1}
+          <span class="session-relay">{row.relay.label || row.relay.id}</span>
+        {/if}
         {#each row.list as session (session.name)}
           {@const active = session.name === (activeSessions.get(row.relay.id) || '')
             || session.active}

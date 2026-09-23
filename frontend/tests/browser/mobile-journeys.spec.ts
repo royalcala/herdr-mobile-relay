@@ -5779,6 +5779,34 @@ test('does not report failed question navigation as opened', async ({ page }) =>
   await expect(page.getByRole('group', { name: second.question })).toBeVisible();
 });
 
+test('names the herdr session filter and lists the sessions by name', async ({ page }) => {
+  await boot(page, [fedora]);
+  await expect.poll(() => socketCount(page)).toBe(1);
+  await handshake(page, 0);
+  // Two agents, because the home's filter bar only appears once there is a
+  // choice to make.
+  await server(page, 0, {
+    type: 'agents',
+    agents: [
+      { pane_id: 'w1:p1', status: 'working', project: 'Terminal app', agent: 'opencode', server_session_id: 'session-1', terminal_id: 'terminal-1', generation: 1 },
+      { pane_id: 'w1:p2', status: 'idle', project: 'Notebook', agent: 'codex', server_session_id: 'session-1', terminal_id: 'terminal-2', generation: 1 },
+    ],
+  });
+  await server(page, 0, {
+    type: 'sessions',
+    active: 'default',
+    sessions: [
+      { name: 'default', default: true, running: true, active: true },
+      { name: 'work', default: false, running: true, active: false },
+    ],
+  });
+  // The filter says what it is and names each session: a phone must not have to
+  // guess whether a chip is a machine, an agent or a herdr session.
+  await expect(page.getByText('Sessions', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mirror session default (current)' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mirror session work' })).toBeVisible();
+});
+
 test('refreshes agents on return home and preserves shared terminal behavior', async ({ page }) => {
   await boot(page, [fedora]);
   await expect.poll(() => socketCount(page)).toBe(1);
