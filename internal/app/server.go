@@ -170,6 +170,9 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 	state := coordinator.NewState(logger)
 	hub := transport.NewHub(cfg, logger)
 	herdrClient := herdr.NewClient(cfg.HerdrBin, cfg.SocketPath)
+	// Say which session is being mirrored, and where, at every start: a relay
+	// that silently talks to the wrong session is a support call.
+	logger.Info("mirroring herdr session", "session", cfg.Session, "socket", cfg.SocketPath)
 	_, clipboardRead, _ := clipboard.Reader()
 	pollInterval := time.Duration(cfg.PollInterval * float64(time.Second))
 	poller := coordinator.NewPoller(herdrClient, state, pollInterval, logger)
@@ -233,6 +236,7 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 
 	return &Server{
 		cfg:                 cfg,
+		mirroredSession:     cfg.Session,
 		version:             version,
 		revision:            revision,
 		hostname:            hostname,

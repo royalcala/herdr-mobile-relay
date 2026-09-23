@@ -321,3 +321,63 @@ func isolateLoadEnvironment(t *testing.T) {
 	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", "")
 	t.Setenv("HERDR_RELEASE_ROOT", "")
 }
+
+// The relay mirrors the default session unless told otherwise, and it never
+// invents a session: 'main' was created by another tool's `--session main`, and
+// a relay that quietly talks to the wrong session is impossible to diagnose.
+func TestLoadMirrorsTheDefaultSessionUnlessConfigured(t *testing.T) {
+	isolateLoadEnvironment(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Session != DefaultSession {
+		t.Fatalf("session = %q, want %q", cfg.Session, DefaultSession)
+	}
+	if !strings.HasSuffix(cfg.SocketPath, filepath.Join("herdr", "herdr.sock")) {
+		t.Fatalf("socket = %q, want the default session socket", cfg.SocketPath)
+	}
+	if strings.Contains(cfg.SocketPath, "sessions") {
+		t.Fatalf("the default session must not resolve under sessions/: %q", cfg.SocketPath)
+	}
+}
+
+func TestLoadResolvesAConfiguredSessionSocket(t *testing.T) {
+	isolateLoadEnvironment(t)
+	t.Setenv("HERDR_SESSION", "work")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Session != "work" {
+		t.Fatalf("session = %q, want work", cfg.Session)
+	}
+	if !strings.HasSuffix(cfg.SocketPath, filepath.Join("herdr", "sessions", "work", "herdr.sock")) {
+		t.Fatalf("socket = %q, want the work session socket", cfg.SocketPath)
+	}
+}
+
+func TestLoadPrefersAnExplicitSocketOverASessionName(t *testing.T) {
+	isolateLoadEnvironment(t)
+	t.Setenv("HERDR_SESSION", "work")
+	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "custom.sock"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(cfg.SocketPath, "custom.sock") {
+		t.Fatalf("socket = %q, want the explicit path", cfg.SocketPath)
+	}
+}
+
+func TestLoadRefusesASessionNameThatEscapesTheSessionsDirectory(t *testing.T) {
+	isolateLoadEnvironment(t)
+	t.Setenv("HERDR_SESSION", "../../elsewhere")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("a session name that escapes the sessions directory must be refused")
+	}
+}

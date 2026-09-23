@@ -32,7 +32,11 @@ type Config struct {
 	AllowedOrigins []string
 	WebRoot        string
 	HerdrBin       string
-	SocketPath     string
+	// Session is the herdr session the relay mirrors. Herdr keeps every named
+	// session on its own socket, so this decides SocketPath; "default" is the
+	// session a plain `herdr` command talks to. The relay never creates one.
+	Session    string
+	SocketPath string
 	// QueuePath is the versioned task board (queue/tasks.json) the phone shows
 	// next to the live agents. Relative paths resolve against the working
 	// directory, which for the repo checkout is where the board lives.
@@ -121,8 +125,14 @@ func Load() (*Config, error) {
 		cfg.ReleaseRoot = filepath.Join(cfg.DataHome, "herdr-mobile-relay")
 	}
 
+	if cfg.Session == "" {
+		cfg.Session = strings.TrimSpace(os.Getenv("HERDR_SESSION"))
+	}
+	if cfg.Session == "" {
+		cfg.Session = DefaultSession
+	}
 	if cfg.SocketPath == "" {
-		cfg.SocketPath = filepath.Join(cfg.ConfigHome, "herdr", "herdr.sock")
+		cfg.SocketPath = SessionSocketPath(cfg.ConfigHome, cfg.Session)
 	}
 
 	if cfg.QueuePath == "" {
@@ -154,6 +164,35 @@ func (c *Config) Addr() string {
 	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
+// DefaultSession is the session a bare `herdr` command talks to, and the one the
+// relay mirrors unless HERDR_SESSION says otherwise.
+const DefaultSession = "default"
+
+// SessionSocketPath is where herdr keeps a session's socket. The default session
+// lives next to herdr's config; every named one lives under sessions/<name>.
+func SessionSocketPath(configHome, session string) string {
+	if session == "" || session == DefaultSession {
+		return filepath.Join(configHome, "herdr", "herdr.sock")
+	}
+	return filepath.Join(configHome, "herdr", "sessions", session, "herdr.sock")
+}
+
+// validSessionName keeps a configured name from escaping the sessions directory.
+func validSessionName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for _, char := range name {
+		switch {
+		case char >= 'a' && char <= 'z', char >= 'A' && char <= 'Z',
+			char >= '0' && char <= '9', char == '-', char == '_', char == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (c *Config) validate() error {
 	if c.Token == "" && c.Host != "127.0.0.1" && c.Host != "::1" && c.Host != "localhost" {
 		return fmt.Errorf("refusing to bind tokenless relay to non-loopback address %s", c.Host)
@@ -163,6 +202,9 @@ func (c *Config) validate() error {
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("invalid port %d", c.Port)
+	}
+	if !validSessionName(c.Session) {
+		return fmt.Errorf("invalid herdr session name %q: letters, digits, dot, dash and underscore only", c.Session)
 	}
 	for _, gateway := range c.GatewayURLs {
 		parsed, err := url.Parse(gateway)
