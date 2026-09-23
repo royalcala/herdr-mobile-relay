@@ -121,6 +121,12 @@ import type {
   WorktreeListing,
 } from './types';
 const COMMAND_TIMEOUT_MS = 15_000;
+/**
+ * What the phone says when the pane it was about to talk to belongs to a session
+ * that no longer runs. It replaces herdr's own wording, which explained nothing.
+ */
+const STALE_PANE_MESSAGE = "This pane's session is no longer running, so nothing was sent. The list has been refreshed — open the agent again.";
+
 const ACCEPTED_COMMAND_TIMEOUT_MS = 10_000;
 const ATTACHMENT_UPLOAD_TIMEOUT_MS = 60_000;
 const BACKGROUND_HEALTH_TIMEOUT_MS = 10_000;
@@ -2063,12 +2069,40 @@ class RelayStore {
     return target ? { target, server_session_id: target.server_session_id } : null;
   }
 
+  /**
+   * The live row for an agent, matched by relay and pane. A row the phone drew
+   * earlier may belong to a herdr session that has since been replaced, and a
+   * command sent with that old identity is what herdr answers with "pane session
+   * was replaced".
+   */
+  currentAgentFor(agent: Agent): Agent | null {
+    const rows = this.agentsValue.filter((candidate) => (
+      candidate.relay_id === agent.relay_id && candidate.pane_id === agent.pane_id
+    ));
+    if (!rows.length) return null;
+    return rows.find((candidate) => (candidate.machine_id || '') === (agent.machine_id || ''))
+      || rows[0];
+  }
+
+  private staleAgentError(): CommandError {
+    const error = new CommandError(STALE_PANE_MESSAGE);
+    error.data = { code: 'pane_stale', refresh: true };
+    return error;
+  }
+
   sendToAgent(agent: Agent, payload: Record<string, any>, timeoutMs?: number, signal?: AbortSignal): Promise<CommandResult> {
-    const identity = this.agentTargetPayload(agent);
+    // Re-resolve before sending: a row the phone drew earlier may carry the
+    // identity of a herdr session that has since been replaced, and the relay
+    // refuses those. A row that is not in the list yet (or no longer) is sent
+    // with the identity the caller has: the relay answers a genuinely stale one
+    // with a coded refusal, which this store turns into a refresh and a clear
+    // message rather than herdr's own words.
+    const resolved = this.currentAgentFor(agent) || agent;
+    const identity = this.agentTargetPayload(resolved);
     if (!identity) return Promise.reject(new CommandError('This agent no longer has an exact terminal identity'));
-    return this.sendCommand(agent.relay_id, {
+    return this.sendCommand(resolved.relay_id, {
       ...payload,
-      pane_id: agent.raw_pane_id,
+      pane_id: resolved.raw_pane_id,
       ...identity,
     }, timeoutMs, false, signal);
   }
@@ -2429,7 +2463,14 @@ class RelayStore {
     this.pendingRequests.delete(result.request_id);
     if (result.ok) pending.resolve(result);
     else {
-      const error = new CommandError(result.error || 'Command failed');
+      const data = (result.data || {}) as Record<string, unknown>;
+      // A pane whose session was replaced is not the phone's fault and not
+      // something herdr's own wording explains: reload the list and say so.
+      const stale = data.code === 'pane_stale' || data.refresh === true;
+      if (stale) this.requestAgents();
+      const error = new CommandError(stale
+        ? (result.error || STALE_PANE_MESSAGE)
+        : (result.error || 'Command failed'));
       error.data = result.data;
       if (result.phase === 'dispatched_unknown') {
         error.data = { ...(result.data || {}), dispatched_unknown: true };

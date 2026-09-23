@@ -1,49 +1,42 @@
 import { describe, expect, it } from 'vitest';
-import { ARMED_KEYS, CTRL_COMBOS, armedLabel, comboTitle, modifierChord } from '$lib/keymap';
+import { armedLabel, modifierChord, type Modifiers } from '$lib/keymap';
 
-describe('terminal key pad', () => {
-  it('carries the combinations a phone cannot otherwise produce', () => {
-    const keys = CTRL_COMBOS.map((combo) => combo.key);
-    // The four the manager asked for by name, because a plan approval asked for
-    // Ctrl+A and the pad had no Ctrl at all.
-    expect(keys).toContain('a');
-    expect(keys).toContain('c');
-    expect(keys).toContain('d');
-    expect(keys).toContain('b');
-    for (const combo of CTRL_COMBOS) {
-      expect(combo.title).toMatch(/^Ctrl\+\w/);
-      expect(combo.label).not.toBe('');
-    }
+/** The chord the pad builds for a key with those modifiers armed. */
+function chordWith(modifiers: Modifiers, key: string): string {
+  const built = modifierChord(modifiers, key);
+  if (!built) throw new Error(`no chord for ${key}`);
+  return built.chord;
+}
+
+describe('latched terminal modifiers', () => {
+  it('carries an armed Ctrl on the next key, exactly like Alt', () => {
+    const ctrl = { ctrl: true, alt: false, shift: false };
+    expect(modifierChord(ctrl, 'c')).toEqual({ chord: 'ctrl+c', label: 'Ctrl+C' });
+    // The combinations a person reaches for when approving a plan or
+    // interrupting an agent.
+    expect(chordWith(ctrl, 'a')).toBe('ctrl+a');
+    expect(chordWith(ctrl, 'b')).toBe('ctrl+b');
+    expect(chordWith(ctrl, 'd')).toBe('ctrl+d');
+    // Keys from the app's own pad, not the phone keyboard.
+    expect(modifierChord(ctrl, 'Tab')).toEqual({ chord: 'ctrl+tab', label: 'Ctrl+Tab' });
+    expect(chordWith(ctrl, 'Escape')).toBe('ctrl+escape');
+    expect(chordWith(ctrl, 'ArrowUp')).toBe('ctrl+arrowup');
   });
 
-  it('sends a combination whole, with no modifier armed', () => {
-    expect(modifierChord({ ctrl: false, alt: false, shift: false }, 'c')).toBeNull();
-    expect(comboTitle('c')).toBe('Ctrl+C');
+  it('stacks the latched modifiers in the order they apply', () => {
+    expect(modifierChord({ ctrl: true, alt: false, shift: true }, 'Tab'))
+      .toEqual({ chord: 'ctrl+shift+tab', label: 'Ctrl+Shift+Tab' });
+    expect(modifierChord({ ctrl: false, alt: true, shift: false }, 'Enter'))
+      .toEqual({ chord: 'alt+enter', label: 'Alt+Enter' });
   });
 
-  it('builds the chord herdr parses when a modifier is latched', () => {
-    expect(modifierChord({ ctrl: true, alt: false, shift: false }, 'a'))
-      .toEqual({ chord: 'ctrl+a', label: 'Ctrl+A' });
-    expect(modifierChord({ ctrl: true, alt: true, shift: true }, 'c'))
-      .toEqual({ chord: 'ctrl+alt+shift+c', label: 'Ctrl+Alt+Shift+C' });
-    expect(modifierChord({ ctrl: true, alt: false, shift: false }, 'Tab'))
-      .toEqual({ chord: 'ctrl+tab', label: 'Ctrl+Tab' });
-    expect(modifierChord({ ctrl: false, alt: false, shift: true }, 'ArrowUp'))
-      .toEqual({ chord: 'shift+arrowup', label: 'Shift+Arrowup' });
+  it('sends a key on its own when nothing is armed', () => {
+    expect(modifierChord({ ctrl: false, alt: false, shift: false }, 'Tab')).toBeNull();
   });
 
-  it('names the latched modifiers in the order they are applied', () => {
+  it('names what is armed, so the latch is visible', () => {
+    expect(armedLabel({ ctrl: true, alt: false, shift: false })).toBe('Ctrl');
     expect(armedLabel({ ctrl: true, alt: true, shift: true })).toBe('Ctrl+Alt+Shift');
-    expect(armedLabel({ ctrl: false, alt: true, shift: false })).toBe('Alt');
     expect(armedLabel({ ctrl: false, alt: false, shift: false })).toBe('');
-  });
-
-  it('offers the keys a prompt needs without a keyboard', () => {
-    const labels = ARMED_KEYS.map((key) => key.label);
-    expect(labels).toContain('Esc');
-    expect(labels).toContain('Tab');
-    expect(labels).toContain('Enter');
-    expect(labels).toContain('↑');
-    expect(labels).toContain('↓');
   });
 });

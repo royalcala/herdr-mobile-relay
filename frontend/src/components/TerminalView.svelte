@@ -42,7 +42,7 @@
   import { replaceView } from '$lib/router';
   import { targetRefForAgent } from '$lib/resource-id';
   import { securityState } from '$lib/security';
-  import { CTRL_COMBOS, armedLabel, comboTitle, modifierChord, type Modifiers } from '$lib/keymap';
+  import { armedLabel, modifierChord, type Modifiers } from '$lib/keymap';
   import { relayStore } from '$lib/store';
   import {
     latestCompletedResponse,
@@ -1545,17 +1545,7 @@
     modifierInputElement?.blur();
   }
 
-  /**
-   * One tap for the combinations a phone cannot otherwise produce. A phone has
-   * no Ctrl key: arming a modifier and typing a letter into a hidden input is
-   * how you fail to approve a plan on a phone, so the combination goes out
-   * whole.
-   */
-  function sendCombo(key: string) {
-    if (readOnly) return;
-    disarmModifiers();
-    void sendKeys([`ctrl+${key}`], comboTitle(key));
-  }
+
 
   function modifierInput(event: Event) {
     const target = event.currentTarget as HTMLInputElement;
@@ -2421,19 +2411,6 @@
     {#if keyControlStatus}
       <p class:error={keyFeedbackError} class="key-feedback" role="status" aria-live="polite">{keyControlStatus}</p>
     {/if}
-      <div class="term-combos" role="group" aria-label="Control key combinations">
-        {#each CTRL_COMBOS as combo (combo.key)}
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={readOnly || keySending}
-            aria-label={combo.title}
-            title={combo.title}
-            onpointerdown={(event) => event.preventDefault()}
-            onclick={() => sendCombo(combo.key)}
-          >{combo.label}</Button>
-        {/each}
-      </div>
       <div class="term-keys" aria-busy={keySending}>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Tab" title="Send Tab" onpointerdown={(event) => event.preventDefault()} onclick={sendTab}>{@render tabIcon()}</Button>
@@ -2470,10 +2447,10 @@
             aria-controls="modifier-key-input"
             aria-pressed={ctrlArmed}
             aria-label="Ctrl"
-            title="Arm Ctrl; combine it with Shift or Alt"
+            title="Arm Ctrl; the next key carries it, exactly like Alt"
             onpointerdown={(event) => event.preventDefault()}
             onclick={toggleCtrl}
-          ><span class="key-caret">^</span></Button>
+          >Ctrl</Button>
           <Button
             variant="secondary"
             size="sm"

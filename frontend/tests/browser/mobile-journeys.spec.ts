@@ -5822,35 +5822,28 @@ test('refreshes agents on return home and preserves shared terminal behavior', a
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
       && JSON.stringify(command.keys) === JSON.stringify(['shift+c'])).length).toBe(1);
-  // The latch carries exactly one key, and sending releases the hidden input:
-  // a phone must not be left with its own keyboard open after a chord.
+  // The latch carries exactly one key, and sending releases the hidden input: a
+  // phone must not be left with its own keyboard open after a chord.
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'false');
   await expect(modifierLetter).not.toBeFocused();
 
-  // A phone has no Ctrl key, so the pad sends the combinations whole. This is
-  // the flow that failed on the manager's phone: approving a plan asked for
-  // Ctrl+A and only Alt existed.
-  const comboCtrlA = page.getByRole('button', { name: 'Ctrl+A' });
-  const comboCtrlB = page.getByRole('button', { name: 'Ctrl+B', exact: true });
-  const comboCtrlC = page.getByRole('button', { name: 'Ctrl+C', exact: true });
-  const comboCtrlD = page.getByRole('button', { name: 'Ctrl+D', exact: true });
+  // Ctrl behaves exactly like Alt and Shift: arm it, it stays visibly armed, and
+  // the next key pressed on the app's own pad carries it. This is the flow that
+  // failed on the manager's phone: approving a plan asked for Ctrl+A and there
+  // was no Ctrl button at all.
+  const escKey = page.getByRole('button', { name: 'Esc', exact: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(comboCtrlA).toBeVisible();
-  const combosOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
-  expect(combosOverflow).toBe(false);
-  const combos: Array<[typeof comboCtrlA, string]> = [
-    [comboCtrlA, 'ctrl+a'], [comboCtrlB, 'ctrl+b'], [comboCtrlC, 'ctrl+c'], [comboCtrlD, 'ctrl+d'],
-  ];
-  for (const [button, chord] of combos) {
-    await button.click();
-    await expect.poll(async () => (await commands(page))
-      .filter((command) => command.type === 'send_keys'
-        && JSON.stringify(command.keys) === JSON.stringify([chord])).length).toBe(1);
-  }
-
   await ctrlKey.click();
   await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
+  await tabKey.click();
+  await expect.poll(async () => (await commands(page))
+    .filter((command) => command.type === 'send_keys'
+      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+tab'])).length).toBe(1);
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
+
+  await ctrlKey.click();
   await shiftKey.click();
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
   await modifierLetter.press('c');
   await expect.poll(async () => (await commands(page))
@@ -5860,18 +5853,21 @@ test('refreshes agents on return home and preserves shared terminal behavior', a
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'false');
 
   await ctrlKey.click();
-  await tabKey.click();
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+tab'])).length).toBe(1);
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
-
-  await ctrlKey.click();
   await arrowKeys.click();
   await page.getByRole('button', { name: 'Up', exact: true }).click();
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
       && JSON.stringify(command.keys) === JSON.stringify(['ctrl+up'])).length).toBe(1);
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
+
+  // Ctrl+A, the combination the plan approval asked for.
+  await ctrlKey.click();
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
+  await modifierLetter.press('a');
+  await expect.poll(async () => (await commands(page))
+    .filter((command) => command.type === 'send_keys'
+      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+a'])).length).toBe(1);
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
 
   await altKey.click();
   await enterKey.click();
@@ -5881,7 +5877,6 @@ test('refreshes agents on return home and preserves shared terminal behavior', a
   await expect(page.getByRole('status').filter({ hasText: 'Alt+Enter sent' })).toBeVisible();
   await expect(altKey).toHaveAttribute('aria-pressed', 'false');
 
-  const escKey = page.getByRole('button', { name: 'Esc', exact: true });
   await escKey.click();
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
@@ -5891,6 +5886,8 @@ test('refreshes agents on return home and preserves shared terminal behavior', a
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
       && JSON.stringify(command.keys) === JSON.stringify(['ctrl+escape'])).length).toBe(1);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(overflow).toBe(false);
 
   await shiftKey.click();
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
