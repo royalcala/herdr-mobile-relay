@@ -5779,6 +5779,52 @@ test('does not report failed question navigation as opened', async ({ page }) =>
   await expect(page.getByRole('group', { name: second.question })).toBeVisible();
 });
 
+test('keeps every pane label readable on a narrow phone, deleted directory included', async ({ page }) => {
+  await boot(page, [fedora]);
+  await expect.poll(() => socketCount(page)).toBe(1);
+  await handshake(page, 0);
+  // The phone the manager holds.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await server(page, 0, {
+    type: 'workspaces',
+    workspaces: [{
+      workspace_id: 'w1', number: 1, label: 'Wake', pane_count: 1, tab_count: 1,
+      cwd: '/home/someone/Documents/github/herdr-manager-wake/.worktrees/watch-visible (deleted)',
+    }],
+  });
+  await server(page, 0, {
+    type: 'agents',
+    agents: [{
+      pane_id: 'w1:p1', workspace_id: 'w1', tab_id: 'w1:t1', tab_number: 1,
+      // Herdr appends this when the directory is gone: it is information, and it
+      // used to be the part the row clipped.
+      cwd: '/home/someone/Documents/github/herdr-manager-wake/.worktrees/watch-visible (deleted)',
+      tab_label: 'Watchdog', status: 'idle', project: 'herdr-manager-wake', agent: 'codex',
+      server_session_id: 'session-1', terminal_id: 'terminal-1', generation: 1,
+    }],
+  });
+  await server(page, 0, {
+    type: 'sessions', active: 'default',
+    sessions: [{ name: 'default', default: true, running: true, active: true }],
+  });
+
+  const path = page.locator('.compact-agent-card .agent-path').first();
+  await expect(path).toBeVisible();
+  await expect(path).toContainText('(deleted)');
+
+  // "Visible" is not enough: the row must not clip the label it holds.
+  const clipping = await path.locator('span').last().evaluate((element) => ({
+    clipped: element.scrollWidth > element.clientWidth + 1,
+    overflowsRight: element.getBoundingClientRect().right > window.innerWidth,
+  }));
+  expect(clipping.clipped).toBe(false);
+  expect(clipping.overflowsRight).toBe(false);
+
+  const box = await path.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.x + box!.width)).toBeLessThanOrEqual(390);
+});
+
 test('names the herdr session filter and lists the sessions by name', async ({ page }) => {
   await boot(page, [fedora]);
   await expect.poll(() => socketCount(page)).toBe(1);

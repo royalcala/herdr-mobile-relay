@@ -307,6 +307,14 @@ textarea { min-height: 6.5rem; resize: vertical; }
 .path-row > span, .agent-path > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .path-symbol { flex: 0 0 auto; height: .85em; stroke: var(--muted); width: .85em; }
 .agent-path { flex: 1; font-size: .8rem; font-weight: 600; }
+/* On a narrow phone the path must be READ, not truncated: its tail carries
+   information — herdr appends " (deleted)" when the directory is gone — so the
+   row wraps instead of clipping it with an ellipsis. */
+@media (max-width: 480px) {
+  .path-row > span, .agent-path > span { overflow-wrap: anywhere; white-space: normal; }
+  .agent-path, .path-row { flex-wrap: wrap; }
+}
+
 .agent-title-row .agent-path { align-self: center; }
 .compact-agent-grid { gap: .28rem; }
 .compact-agent-card { background: color-mix(in srgb, var(--card) 78%, transparent); border-radius: .58rem; }
@@ -789,7 +797,6 @@ textarea { min-height: 6.5rem; resize: vertical; }
 /* The caret is ASCII, so it comes from the same family everywhere and one
    nudge centres it on every platform: its ink sits in the top half of the em
    box. Measured on Android and desktop, both ~3.1px high before the nudge. */
-.key-caret { display: block; font-size: 1.25rem; line-height: 1; transform: translateY(.18em); }
 .arrow-popup { background: var(--card); border: 1px solid var(--border); border-radius: .7rem; bottom: 2.8rem; display: grid; gap: .2rem; grid-template-columns: repeat(3, 2.3rem); padding: .35rem; position: absolute; right: 0; z-index: 10; }
 .arrow-popup button { background: var(--secondary); border: 0; border-radius: .4rem; color: var(--foreground); height: 2.3rem; }
 .fkey-popup { background: var(--card); border: 1px solid var(--border); border-radius: .7rem; bottom: 2.8rem; display: grid; gap: .2rem; grid-template-columns: repeat(4, 2.6rem); padding: .35rem; position: absolute; right: 0; z-index: 10; }
