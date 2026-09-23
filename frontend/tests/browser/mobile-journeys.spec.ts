@@ -5822,80 +5822,76 @@ test('refreshes agents on return home and preserves shared terminal behavior', a
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
       && JSON.stringify(command.keys) === JSON.stringify(['shift+c'])).length).toBe(1);
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
-  await modifierLetter.press('d');
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['shift+d'])).length).toBe(1);
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
+  // The latch carries exactly one key, and sending releases the hidden input:
+  // a phone must not be left with its own keyboard open after a chord.
+  await expect(shiftKey).toHaveAttribute('aria-pressed', 'false');
+  await expect(modifierLetter).not.toBeFocused();
+
+  // A phone has no Ctrl key, so the pad sends the combinations whole. This is
+  // the flow that failed on the manager's phone: approving a plan asked for
+  // Ctrl+A and only Alt existed.
+  const comboCtrlA = page.getByRole('button', { name: 'Ctrl+A' });
+  const comboCtrlB = page.getByRole('button', { name: 'Ctrl+B', exact: true });
+  const comboCtrlC = page.getByRole('button', { name: 'Ctrl+C', exact: true });
+  const comboCtrlD = page.getByRole('button', { name: 'Ctrl+D', exact: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(comboCtrlA).toBeVisible();
+  const combosOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+  expect(combosOverflow).toBe(false);
+  const combos: Array<[typeof comboCtrlA, string]> = [
+    [comboCtrlA, 'ctrl+a'], [comboCtrlB, 'ctrl+b'], [comboCtrlC, 'ctrl+c'], [comboCtrlD, 'ctrl+d'],
+  ];
+  for (const [button, chord] of combos) {
+    await button.click();
+    await expect.poll(async () => (await commands(page))
+      .filter((command) => command.type === 'send_keys'
+        && JSON.stringify(command.keys) === JSON.stringify([chord])).length).toBe(1);
+  }
+
   await ctrlKey.click();
   await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
+  await shiftKey.click();
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
   await modifierLetter.press('c');
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
       && JSON.stringify(command.keys) === JSON.stringify(['ctrl+shift+c'])).length).toBe(1);
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await shiftKey.click();
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'false');
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
-  await modifierLetter.press('o');
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+o'])).length).toBe(1);
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await ctrlKey.click();
   await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
-  await expect(modifierLetter).not.toBeFocused();
-  await tabKey.click();
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['Tab'])).length).toBe(1);
-  await shiftKey.click();
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
-  await tabKey.click();
-  await tabKey.click();
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['shift+tab'])).length).toBe(2);
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
+  await expect(shiftKey).toHaveAttribute('aria-pressed', 'false');
+
   await ctrlKey.click();
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
   await tabKey.click();
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+shift+tab'])).length).toBe(1);
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(modifierLetter).toBeFocused();
+      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+tab'])).length).toBe(1);
+  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'false');
+
+  await ctrlKey.click();
   await arrowKeys.click();
   await page.getByRole('button', { name: 'Up', exact: true }).click();
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+shift+up'])).length).toBe(1);
-  await altKey.click();
-  await expect(altKey).toHaveAttribute('aria-pressed', 'true');
-  await modifierLetter.press('x');
-  await expect.poll(async () => (await commands(page))
-    .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+alt+shift+x'])).length).toBe(1);
+      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+up'])).length).toBe(1);
+
   await altKey.click();
   await enterKey.click();
   await expect.poll(async () => (await commands(page))
     .filter((command) => command.type === 'send_keys'
-      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+shift+enter'])).length).toBe(1);
-  await expect(page.getByRole('status').filter({ hasText: 'Ctrl+Shift+Enter sent' })).toBeVisible();
-  await expect(ctrlKey).toHaveAttribute('aria-pressed', 'true');
-  await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
+      && JSON.stringify(command.keys) === JSON.stringify(['alt+enter'])).length).toBe(1);
+  await expect(page.getByRole('status').filter({ hasText: 'Alt+Enter sent' })).toBeVisible();
+  await expect(altKey).toHaveAttribute('aria-pressed', 'false');
+
+  const escKey = page.getByRole('button', { name: 'Esc', exact: true });
+  await escKey.click();
+  await expect.poll(async () => (await commands(page))
+    .filter((command) => command.type === 'send_keys'
+      && JSON.stringify(command.keys) === JSON.stringify(['Escape'])).length).toBe(1);
   await ctrlKey.click();
-  await shiftKey.click();
-  await expect(modifierLetter).not.toBeFocused();
+  await escKey.click();
+  await expect.poll(async () => (await commands(page))
+    .filter((command) => command.type === 'send_keys'
+      && JSON.stringify(command.keys) === JSON.stringify(['ctrl+escape'])).length).toBe(1);
+
   await shiftKey.click();
   await expect(shiftKey).toHaveAttribute('aria-pressed', 'true');
   await expect(modifierLetter).toBeFocused();

@@ -9,6 +9,9 @@ export type ViewState =
   | { view: 'agents' }
   | { view: 'settings' }
   | { view: 'workspaces' }
+  | { view: 'orchestrator' }
+  | { view: 'panels' }
+  | { view: 'sessions' }
   | { view: 'launch'; relayId?: string; workspaceId?: string; cwd?: string }
   | { view: 'activity' }
   | { view: 'activity_detail'; key: string }
@@ -39,6 +42,9 @@ function showView(state: ViewState): void {
 export function stateFromLocation(locationValue: Pick<Location, 'hash'> = location): ViewState {
   if (locationValue.hash === '#settings') return { view: 'settings' };
   if (locationValue.hash === '#workspaces') return { view: 'workspaces' };
+  if (locationValue.hash === '#orchestrator') return { view: 'orchestrator' };
+  if (locationValue.hash === '#panels') return { view: 'panels' };
+  if (locationValue.hash === '#sessions') return { view: 'sessions' };
   if (locationValue.hash === '#launch') return { view: 'launch' };
   const launchTarget = locationValue.hash.match(/^#launch=(.+)$/);
   if (launchTarget) {
@@ -108,6 +114,9 @@ export function stateFromLocation(locationValue: Pick<Location, 'hash'> = locati
 export function viewUrl(state: ViewState): string {
   if (state.view === 'settings') return '#settings';
   if (state.view === 'workspaces') return '#workspaces';
+  if (state.view === 'orchestrator') return '#orchestrator';
+  if (state.view === 'panels') return '#panels';
+  if (state.view === 'sessions') return '#sessions';
   if (state.view === 'launch') {
     if (!state.workspaceId) return '#launch';
     return `#launch=${encodeURIComponent(JSON.stringify({

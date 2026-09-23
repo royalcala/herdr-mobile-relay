@@ -4,6 +4,7 @@
   import ActivityDetail from '$components/ActivityDetail.svelte';
   import ActivityView from '$components/ActivityView.svelte';
   import AgentList from '$components/AgentList.svelte';
+  import HomeTabs from '$components/HomeTabs.svelte';
   import AgentRail from '$components/AgentRail.svelte';
   import LaunchView from '$components/LaunchView.svelte';
   import GlobalJump from '$components/GlobalJump.svelte';
@@ -64,6 +65,10 @@
   import type { ViewState } from '$lib/router';
 
   const relays = relayStore.relayConfigs;
+  const queueTasks = relayStore.queueTasks;
+  const queueBoard = relayStore.queueBoard;
+  const herdrSessions = relayStore.sessions;
+  const activeHerdrSessions = relayStore.activeSessions;
   const connections = relayStore.connections;
   const agents = relayStore.agents;
   const machines = relayStore.machines;
@@ -87,7 +92,22 @@
   const automaticUpdateChecks = new Set<string>();
   const awaitedDeployments = new Set<string>();
   let visibilityRevision = $state(0);
+  // The four faces of the home; every other view is something you opened.
+  const homeSection = $derived.by(() => {
+    switch ($currentView.view) {
+      case 'agents': return 'agents' as const;
+      case 'orchestrator': return 'board' as const;
+      case 'panels': return 'panels' as const;
+      case 'sessions': return 'sessions' as const;
+      default: return '' as const;
+    }
+  });
   let conversationHistoryComponent = $state<typeof import('$components/ConversationHistory.svelte')['default'] | null>(null);
+  // The board, the panels and the session list are secondary views: they must
+  // not sit in the payload every phone downloads to show the agents.
+  let orchestratorComponent = $state<typeof import('$components/OrchestratorView.svelte')['default'] | null>(null);
+  let panelsComponent = $state<typeof import('$components/PanelsView.svelte')['default'] | null>(null);
+  let sessionsComponent = $state<typeof import('$components/SessionsView.svelte')['default'] | null>(null);
   let conversationHistoryLoadError = $state(false);
   let viewedRelayId = '';
   let viewedTargetSignature = '';
@@ -113,6 +133,24 @@
   const activeConnection = $derived(activeAgent ? $connections.get(activeAgent.relay_id) : null);
   const activeMachine = $derived(activeAgent ? agentMachineRef(activeAgent, machinesList, readOnlyRelayIds) : null);
   const conversationHistoryAvailable = $derived(hasConversationHistory(activeAgent, activeConnection));
+  $effect(() => {
+    const view = $currentView.view;
+    if (view === 'orchestrator' && !orchestratorComponent) {
+      void import('$components/OrchestratorView.svelte').then(({ default: component }) => {
+        orchestratorComponent = component;
+      });
+    }
+    if (view === 'panels' && !panelsComponent) {
+      void import('$components/PanelsView.svelte').then(({ default: component }) => {
+        panelsComponent = component;
+      });
+    }
+    if (view === 'sessions' && !sessionsComponent) {
+      void import('$components/SessionsView.svelte').then(({ default: component }) => {
+        sessionsComponent = component;
+      });
+    }
+  });
   $effect(() => {
     if ($currentView.view !== 'history' || !activeAgent || conversationHistoryComponent) return;
     void import('$components/ConversationHistory.svelte')
@@ -685,6 +723,9 @@
     </nav>
   </header>
 
+  {#if homeSection}
+    <HomeTabs active={homeSection} />
+  {/if}
   {#if $currentView.view === 'settings'}
     <SettingsView {readOnlyRelayIds} />
   {:else if $currentView.view === 'workspaces'}
@@ -756,6 +797,40 @@
   {:else if $currentView.view === 'push'}
     <main class="page terminal-loading" aria-label="Opening notification">
       <p role="status">Unlocking and validating the exact notification target…</p>
+    </main>
+  {:else if $currentView.view === 'orchestrator' && orchestratorComponent}
+    {@const Board = orchestratorComponent}
+    <Board
+      tasks={$queueTasks}
+      board={$queueBoard}
+      agents={$agents}
+      relays={$relays}
+      connections={$connections}
+      onopen={openAgent}
+      onrefresh={() => relayStore.requestAgents()}
+    />
+  {:else if $currentView.view === 'panels' && panelsComponent}
+    {@const Panels = panelsComponent}
+    <Panels
+      relays={$relays}
+      connections={$connections}
+      machines={$machines}
+      sessions={$herdrSessions}
+      agents={$agents}
+      onrefresh={() => relayStore.requestAgents()}
+    />
+  {:else if $currentView.view === 'sessions' && sessionsComponent}
+    {@const Sessions = sessionsComponent}
+    <Sessions
+      relays={$relays}
+      sessions={$herdrSessions}
+      activeSessions={$activeHerdrSessions}
+      connections={$connections}
+      onselect={(relayId, name) => { void relayStore.selectSession(relayId, name); }}
+    />
+  {:else if $currentView.view === 'orchestrator' || $currentView.view === 'panels' || $currentView.view === 'sessions'}
+    <main class="page terminal-loading" aria-label="Opening section">
+      <p role="status">Opening…</p>
     </main>
   {:else}
     <AgentList bind:workspaceDisclosure agents={$agents} workspaces={$workspaces} relays={$relays} connections={$connections} machines={machinesList} readOnlyRelays={readOnlyRelayIds} responding={$responding} onopen={openAgent} />

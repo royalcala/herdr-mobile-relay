@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import AgentLogo, { hasAgentLogo } from '$components/AgentLogo.svelte';
   import MachineFilters from '$components/MachineFilters.svelte';
+  import SessionPicker from '$components/SessionPicker.svelte';
   import Button from '$components/ui/Button.svelte';
   import {
     agentLastActiveAt,
@@ -29,6 +30,11 @@
   import { relayStore } from '$lib/store';
   import type { Agent, Machine, RelayConfig, RelayConnectionView, RelayWorkspace } from '$lib/types';
   import { homeRelativePath, informativePath, workspaceGroupTrees, workspaceGroups, workspaceIdentity, workspaceProvenance, workspaceStateTone, type WorkspaceGroup, type WorkspaceGroupTree, type WorkspaceTab } from '$lib/workspaces';
+
+  const herdrSessionsStore = relayStore.sessions;
+  const activeHerdrSessionStore = relayStore.activeSessions;
+  const herdrSessions = $derived($herdrSessionsStore);
+  const activeHerdrSession = $derived($activeHerdrSessionStore);
 
   let {
     agents,
@@ -904,6 +910,7 @@
   {/snippet}
 
   {#if filterBarVisible}
+    <SessionPicker relays={relays} sessions={herdrSessions} activeSessions={activeHerdrSession} />
     <MachineFilters
       sections={machineSections}
       machineFilter={activeMachineFilter}

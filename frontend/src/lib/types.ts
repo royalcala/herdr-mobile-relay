@@ -325,6 +325,40 @@ export interface Agent {
   [key: string]: unknown;
 }
 
+/** One named herdr session on a relay's computer. Each has its own socket. */
+export interface HerdrSession {
+  relay_id: string;
+  name: string;
+  default: boolean;
+  running: boolean;
+  active: boolean;
+  dir?: string;
+}
+
+export type QueueTaskState = 'queued' | 'working' | 'blocked' | 'review' | 'done' | string;
+
+/** One row of the versioned task board (queue/tasks.json) the relay serves. */
+export interface QueueTask {
+  id: string;
+  title: string;
+  repo?: string;
+  owner?: string;
+  state: QueueTaskState;
+  branch?: string;
+  last_commit?: string;
+  blocked_by?: string;
+  waits_on_human?: boolean;
+  updated_at?: string;
+  notes?: string;
+}
+
+export interface QueueBoard {
+  available: boolean;
+  reason: string;
+  path: string;
+  updated_at: string;
+}
+
 export interface Activity {
   id?: string;
   timestamp: number | string;

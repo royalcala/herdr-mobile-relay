@@ -42,6 +42,7 @@
   import { replaceView } from '$lib/router';
   import { targetRefForAgent } from '$lib/resource-id';
   import { securityState } from '$lib/security';
+  import { CTRL_COMBOS, armedLabel, comboTitle, modifierChord, type Modifiers } from '$lib/keymap';
   import { relayStore } from '$lib/store';
   import {
     latestCompletedResponse,
@@ -304,13 +305,9 @@
     offsets: terminalRowOffsets(renderedRows),
   }));
   const terminalFind = $derived(findTerminalText(terminalFindCorpus.text, findQuery.trim()));
-  const armedModifierLabel = $derived([
-    ctrlArmed ? 'Ctrl' : '',
-    altArmed ? 'Alt' : '',
-    shiftArmed ? 'Shift' : '',
-  ].filter(Boolean).join('+'));
+  const armedModifierLabel = $derived(armedLabel({ ctrl: ctrlArmed, alt: altArmed, shift: shiftArmed }));
   const keyControlStatus = $derived(armedModifierLabel
-    ? `${armedModifierLabel} armed${keyFeedback ? ` · ${keyFeedback}` : ' — choose a key or type a character'}`
+    ? `${armedModifierLabel} armed${keyFeedback ? ` · ${keyFeedback}` : ' — the next key will carry it'}`
     : keyFeedback);
   const agentResponseCopySupported = $derived.by(() => {
     const connection = $connections.get(agent.relay_id);
@@ -1537,23 +1534,27 @@
     toggleModifier('shift');
   }
 
-  function modifierChord(key: string): { chord: string; label: string } | null {
-    const parts: string[] = [];
-    const labels: string[] = [];
-    if (ctrlArmed) { parts.push('ctrl'); labels.push('Ctrl'); }
-    if (altArmed) { parts.push('alt'); labels.push('Alt'); }
-    if (shiftArmed) { parts.push('shift'); labels.push('Shift'); }
-    if (!parts.length) return null;
-    parts.push(key.toLocaleLowerCase());
-    labels.push(key.length === 1 ? key.toLocaleUpperCase() : key[0].toLocaleUpperCase() + key.slice(1).toLocaleLowerCase());
-    return { chord: parts.join('+'), label: labels.join('+') };
+  function armedModifiers(): Modifiers {
+    return { ctrl: ctrlArmed, alt: altArmed, shift: shiftArmed };
   }
 
   function disarmModifiers() {
     ctrlArmed = false;
     altArmed = false;
     shiftArmed = false;
-    modifierInputElement.blur();
+    modifierInputElement?.blur();
+  }
+
+  /**
+   * One tap for the combinations a phone cannot otherwise produce. A phone has
+   * no Ctrl key: arming a modifier and typing a letter into a hidden input is
+   * how you fail to approve a plan on a phone, so the combination goes out
+   * whole.
+   */
+  function sendCombo(key: string) {
+    if (readOnly) return;
+    disarmModifiers();
+    void sendKeys([`ctrl+${key}`], comboTitle(key));
   }
 
   function modifierInput(event: Event) {
@@ -1562,10 +1563,13 @@
     target.value = '';
     if (!character || /\s/u.test(character)) return;
     sendTerminalKey(character);
+    disarmModifiers();
   }
 
   function sendTerminalKey(key: string, plainLabel = key) {
-    const result = modifierChord(key);
+    const result = modifierChord(armedModifiers(), key);
+    // The latch is for exactly one key: it must not leak into the next one.
+    disarmModifiers();
     void sendKeys([result?.chord || key], result?.label || plainLabel);
   }
 
@@ -2417,6 +2421,19 @@
     {#if keyControlStatus}
       <p class:error={keyFeedbackError} class="key-feedback" role="status" aria-live="polite">{keyControlStatus}</p>
     {/if}
+      <div class="term-combos" role="group" aria-label="Control key combinations">
+        {#each CTRL_COMBOS as combo (combo.key)}
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={readOnly || keySending}
+            aria-label={combo.title}
+            title={combo.title}
+            onpointerdown={(event) => event.preventDefault()}
+            onclick={() => sendCombo(combo.key)}
+          >{combo.label}</Button>
+        {/each}
+      </div>
       <div class="term-keys" aria-busy={keySending}>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} onpointerdown={(event) => event.preventDefault()} onclick={() => sendTerminalKey('Escape', 'Cancelled prompt')}>Esc</Button>
         <Button variant="secondary" size="sm" disabled={readOnly || keySending} aria-label="Tab" title="Send Tab" onpointerdown={(event) => event.preventDefault()} onclick={sendTab}>{@render tabIcon()}</Button>

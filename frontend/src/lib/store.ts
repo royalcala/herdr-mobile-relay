@@ -102,6 +102,9 @@ import type {
   QuestionInteraction,
   HerdrStatus,
   Machine,
+  HerdrSession,
+  QueueTask,
+  QueueBoard,
   RelayConfig,
   RelayConnectionView,
   RelaySpeechVoice,
@@ -411,6 +414,37 @@ function normalizeAgentTargetFields(agent: Partial<Agent>): Partial<Agent> {
   };
 }
 
+function normalizeSession(relayId: string, value: Record<string, unknown>): HerdrSession | null {
+  const name = String(value.name || '').trim();
+  if (!name) return null;
+  return {
+    relay_id: relayId,
+    name,
+    default: value.default === true,
+    running: value.running === true,
+    active: value.active === true,
+    dir: String(value.dir || ''),
+  };
+}
+
+function normalizeQueueTask(value: Record<string, unknown>): QueueTask | null {
+  const id = String(value.id || '').trim();
+  if (!id) return null;
+  return {
+    id,
+    title: String(value.title || id),
+    repo: String(value.repo || ''),
+    owner: String(value.owner || ''),
+    state: String(value.state || 'queued'),
+    branch: String(value.branch || ''),
+    last_commit: String(value.last_commit || ''),
+    blocked_by: String(value.blocked_by || ''),
+    waits_on_human: value.waits_on_human === true,
+    updated_at: String(value.updated_at || ''),
+    notes: String(value.notes || ''),
+  };
+}
+
 function normalizeMachine(value: Record<string, unknown>): Machine | null {
   const machineId = String(value.machine_id || '');
   if (!machineId) return null;
@@ -552,6 +586,12 @@ class RelayStore {
   readonly agents = writable<Agent[]>([]);
   readonly workspaces = writable<RelayWorkspace[]>([]);
   readonly machines = writable<Map<string, Machine[]>>(new Map());
+  /** Named herdr sessions per relay, and the one each relay is mirroring. */
+  readonly sessions = writable<Map<string, HerdrSession[]>>(new Map());
+  readonly activeSessions = writable<Map<string, string>>(new Map());
+  /** The versioned task board, as the relay reads it from queue/tasks.json. */
+  readonly queueTasks = writable<QueueTask[]>([]);
+  readonly queueBoard = writable<QueueBoard>({ available: false, reason: '', path: '', updated_at: '' });
   readonly activities = writable<Activity[]>([]);
   readonly terminalFrames = writable<Map<string, TerminalFrame>>(new Map());
   readonly responding = writable<Set<string>>(new Set());
@@ -565,6 +605,8 @@ class RelayStore {
   private agentsValue: Agent[] = [];
   private workspacesValue: RelayWorkspace[] = [];
   private machinesValue = new Map<string, Machine[]>();
+  private sessionsValue = new Map<string, HerdrSession[]>();
+  private activeSessionsValue = new Map<string, string>();
   private activitiesValue: Activity[] = [];
   private terminalFramesValue = new Map<string, TerminalFrame>();
   private respondingValue = new Set<string>();
@@ -1445,6 +1487,34 @@ class RelayStore {
       this.machines.set(this.machinesValue);
       return;
     }
+    if (message.type === 'sessions') {
+      const incoming = (Array.isArray(message.sessions) ? message.sessions : [])
+        .map((session: unknown) => (session && typeof session === 'object'
+          ? normalizeSession(relayId, session as Record<string, unknown>)
+          : null))
+        .filter((session: HerdrSession | null): session is HerdrSession => session !== null);
+      this.sessionsValue = new Map(this.sessionsValue);
+      this.sessionsValue.set(relayId, incoming);
+      this.sessions.set(this.sessionsValue);
+      if (typeof message.active === 'string' && message.active) {
+        this.activeSessionsValue = new Map(this.activeSessionsValue);
+        this.activeSessionsValue.set(relayId, message.active);
+        this.activeSessions.set(this.activeSessionsValue);
+      }
+      return;
+    }
+    if (message.type === 'queue') {
+      this.queueTasks.set((Array.isArray(message.tasks) ? message.tasks : [])
+        .map((task: unknown) => (task && typeof task === 'object' ? normalizeQueueTask(task as Record<string, unknown>) : null))
+        .filter((task: QueueTask | null): task is QueueTask => task !== null));
+      this.queueBoard.set({
+        available: message.available === true,
+        reason: String(message.reason || ''),
+        path: String(message.path || ''),
+        updated_at: String(message.updated_at || ''),
+      });
+      return;
+    }
     if (message.type === 'workspaces') {
       if (
         connection
@@ -2063,6 +2133,17 @@ class RelayStore {
   async createWorkspace(relayId: string, cwd: string, label: string): Promise<CommandResult> {
     this.workspaceManagementAvailable(relayId);
     const result = await this.sendCommand(relayId, { type: 'workspace_create', cwd, label }, 45_000);
+    this.requestAgents();
+    return result;
+  }
+
+  /**
+   * Moves a relay to another herdr session. The relay re-points the socket it
+   * reads from, so every later answer (agents, panes, workspaces) belongs to the
+   * session the human picked; the machine layout is unchanged.
+   */
+  async selectSession(relayId: string, name: string): Promise<CommandResult> {
+    const result = await this.sendCommand(relayId, { type: 'select_session', name });
     this.requestAgents();
     return result;
   }

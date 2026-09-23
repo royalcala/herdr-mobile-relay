@@ -1070,3 +1070,72 @@ textarea { min-height: 6.5rem; resize: vertical; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+/* --- Herdr session picker ------------------------------------------------- */
+.session-picker { display: flex; flex-direction: column; gap: .3rem; margin-bottom: .6rem; }
+.session-relay { align-self: center; color: var(--muted); font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; }
+.session-chip.stopped { opacity: .55; }
+.session-dot { border-radius: 999px; display: inline-block; height: .42rem; width: .42rem; }
+.session-dot.running { background: var(--success); }
+.session-dot.stopped { background: var(--muted); }
+.session-current { color: var(--muted); font-size: .55rem; letter-spacing: .04em; text-transform: uppercase; }
+.session-chip.active .session-current { color: var(--primary); }
+
+/* --- Home entry points ---------------------------------------------------- */
+.board-entry { align-items: center; background: var(--card); border: 1px solid var(--border); border-radius: 999px; color: var(--foreground); cursor: pointer; display: inline-flex; font-size: .72rem; font-weight: 600; min-height: 2.1rem; padding: .3rem .7rem; }
+
+/* --- Orchestration board -------------------------------------------------- */
+.orchestrator { display: flex; flex-direction: column; gap: 1rem; }
+.orchestrator-header { align-items: flex-start; display: flex; gap: .75rem; justify-content: space-between; }
+.orchestrator-header h1 { font-size: 1.05rem; margin: 0; }
+.orchestrator-sub { color: var(--muted); font-size: .72rem; margin: .2rem 0 0; }
+.orchestrator-note { background: var(--card); border: 1px solid var(--border); border-radius: .6rem; font-size: .75rem; padding: .6rem; }
+.board-section { display: flex; flex-direction: column; gap: .5rem; }
+.board-section h2 { font-size: .78rem; letter-spacing: .05em; margin: 0; text-transform: uppercase; color: var(--muted); }
+.board-hint, .board-empty { color: var(--muted); font-size: .72rem; margin: 0; }
+.board-card { background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: .6rem; display: flex; flex-direction: column; gap: .3rem; padding: .6rem .7rem; text-align: left; width: 100%; }
+.board-card.state-human { border-left-color: var(--warning); }
+.board-card.state-blocked { border-left-color: var(--danger); }
+.board-card.state-working { border-left-color: var(--primary); }
+.board-card.state-done { border-left-color: var(--success); opacity: .8; }
+.board-card.off-board { cursor: pointer; flex-direction: row; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.board-card-head { align-items: baseline; display: flex; gap: .5rem; justify-content: space-between; }
+.board-card-head h3 { font-size: .82rem; margin: 0; }
+.board-state { color: var(--muted); flex: 0 0 auto; font-size: .58rem; letter-spacing: .04em; text-transform: uppercase; }
+.board-state.state-human { color: var(--warning); }
+.board-state.state-blocked { color: var(--danger); }
+.board-state.state-working { color: var(--primary); }
+.board-state.state-done { color: var(--success); }
+.board-meta { color: var(--muted); display: flex; flex-wrap: wrap; font-size: .64rem; gap: .45rem; margin: 0; }
+.board-repo { color: var(--foreground); font-weight: 600; }
+.board-branch, .board-commit { font-family: ui-monospace, monospace; }
+.board-owner { color: var(--primary); }
+.board-meta-inline { color: var(--muted); font-size: .66rem; }
+.board-blocked { font-size: .72rem; margin: 0; }
+.board-blocked strong { color: var(--danger); }
+.board-notes { color: var(--muted); font-size: .7rem; margin: 0; }
+.board-unmatched { color: var(--muted); font-size: .66rem; font-style: italic; margin: 0; }
+.board-agents { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .15rem; }
+.board-agent { align-items: center; background: var(--secondary); border: 1px solid var(--border); border-radius: 999px; color: var(--foreground); cursor: pointer; display: inline-flex; font-size: .66rem; gap: .35rem; min-height: 1.9rem; padding: .25rem .55rem; }
+.board-agent-state { color: var(--muted); font-size: .58rem; text-transform: uppercase; }
+.board-agent-machine { color: var(--primary); font-size: .55rem; text-transform: uppercase; }
+.board-list { display: flex; flex-direction: column; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+.board-list li { align-items: baseline; display: flex; flex-wrap: wrap; gap: .45rem; font-size: .7rem; }
+.agent-dot { border-radius: 999px; display: inline-block; height: .45rem; width: .45rem; }
+.agent-dot.status-blocked { background: var(--danger); }
+.agent-dot.status-working { background: var(--primary); }
+.agent-dot.status-idle { background: var(--muted); }
+.agent-dot.status-done { background: var(--success); }
+.agent-dot.status-waiting { background: var(--warning); }
+
+/* --- One-tap control combinations ---------------------------------------- */
+.term-combos { align-items: center; border-top: 1px solid var(--border); display: flex; gap: .35rem; overflow-x: auto; padding: .4rem max(.55rem, env(safe-area-inset-right)) .4rem max(.55rem, env(safe-area-inset-left)); scrollbar-width: none; }
+.term-combos::-webkit-scrollbar { display: none; }
+.term-combos > * { flex: 0 0 auto; }
+
+/* --- Home tabs ------------------------------------------------------------ */
+.home-tabs { display: flex; gap: .3rem; margin-bottom: .6rem; overflow-x: auto; scrollbar-width: none; }
+.home-tabs::-webkit-scrollbar { display: none; }
+.home-tab { background: transparent; border: 1px solid var(--border); border-radius: 999px; color: var(--muted); cursor: pointer; flex: 0 0 auto; font-size: .72rem; font-weight: 600; min-height: 2.1rem; padding: .3rem .7rem; }
+.home-tab.active { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
+.sessions-view, .panels-view { display: flex; flex-direction: column; gap: 1rem; }
