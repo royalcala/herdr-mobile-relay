@@ -191,3 +191,21 @@ their data and indexes in the on-device banner. Release builds leave it off.
 - **Herdr is not running:** start it with `herdr`, then retry the operation.
 - **Agents are unavailable:** inspect `/healthz`; after a Herdr protocol update,
   run `herdr server live-handoff` and wait for the next relay poll.
+
+## The task board and the herdr session the relay mirrors
+
+`queue/tasks.json` is the versioned task board the phone's Board tab shows. The
+relay reads it (path from `HERDR_QUEUE_PATH`, default `queue/tasks.json` relative
+to the working directory), sends it over the authenticated WebSocket, and
+re-broadcasts it within ten seconds of the file changing. The phone crosses each
+row with the live herdr agents by owner name, by the branch checked out in the
+agent's working directory (herdr worktrees are named after the branch), or by the
+repository in its path; anything that matches nothing is listed as "off the
+board" rather than hidden.
+
+Herdr keeps every named session on its own socket. The relay mirrors one at a
+time — the session behind `HERDR_SOCKET_PATH`, the default session unless
+configured otherwise — and the Sessions tab lists the others and moves the relay
+onto one with `select_session`. A switch re-points the socket API, the CLI
+environment and the event stream, and drops the previous session's inventory, so
+the phone never shows the old session's agents as if they were the new one's.
