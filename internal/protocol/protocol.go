@@ -153,6 +153,7 @@ var actionCatalog = map[string]ActionMetadata{
 	"refresh_agents":           readAction("refresh_agents"),
 	"register_app_origin":      mutateAction("register_app_origin", false, false),
 	"watchdog_status":          readAction("watchdog_status"),
+	"session_snapshot":         readAction("session_snapshot"),
 	"select_session":           mutateAction("select_session", false, true),
 	"release_pane_size":        mutateAction("release_pane_size", true, false),
 	"rename_device":            mutateAction("rename_device", false, true),

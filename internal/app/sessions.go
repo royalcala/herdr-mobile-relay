@@ -6,9 +6,42 @@ import (
 	"time"
 
 	"github.com/0cv/herdr-mobile-relay/internal/herdr"
+	"github.com/0cv/herdr-mobile-relay/internal/orchestration"
 	"github.com/0cv/herdr-mobile-relay/internal/protocol"
 	"github.com/0cv/herdr-mobile-relay/internal/transport"
 )
+
+// orchestrationFor resolves a session against the registry, so every session the
+// relay serves carries the label the human gave it — and a session that was just
+// born inherits the defaults instead of appearing nameless.
+func (s *Server) orchestrationFor(name string) orchestration.Resolved {
+	s.sessionMu.Lock()
+	registry := s.orchestration
+	s.sessionMu.Unlock()
+	return registry.Resolve(name)
+}
+
+// reloadOrchestration re-reads the registry and says so when it cannot: a
+// missing or broken file falls back to the embedded defaults loudly, never
+// silently.
+func (s *Server) reloadOrchestration() {
+	registry, err := orchestration.Load(s.cfg.OrchestrationPath)
+	s.sessionMu.Lock()
+	previous := s.orchestration
+	s.orchestration = registry
+	s.sessionMu.Unlock()
+	if err != nil {
+		// The embedded defaults are already in place; only report a change so
+		// a broken file does not fill the log.
+		if previous.Defaults.Manager == "" {
+			s.logger.Warn("orchestration registry unreadable; using the embedded defaults", "path", s.cfg.OrchestrationPath, "error", err)
+		}
+		return
+	}
+	if previous.Defaults.Manager == "" {
+		s.logger.Info("orchestration registry loaded", "path", s.cfg.OrchestrationPath, "sessions", len(registry.Sessions))
+	}
+}
 
 // sessionsPayload lists every herdr session on this computer and marks the one
 // this relay mirrors. Herdr keeps each session on its own socket, so a relay
@@ -26,12 +59,19 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 			s.sessionMu.Unlock()
 		}
 		for _, session := range list {
+			resolved := s.orchestrationFor(session.Name)
 			sessions = append(sessions, map[string]any{
-				"name":    session.Name,
-				"default": session.Default,
-				"running": session.Running,
-				"active":  session.SocketPath == activeSocket,
-				"dir":     session.SessionDir,
+				"name":       session.Name,
+				"default":    session.Default,
+				"running":    session.Running,
+				"active":     session.SocketPath == activeSocket,
+				"dir":        session.SessionDir,
+				"label":      resolved.Label,
+				"registered": resolved.Registered,
+				"project":    resolved.Project,
+				"queue":      resolved.Queue,
+				"scopes":     resolved.Scopes,
+				"manager":    resolved.Manager,
 			})
 		}
 	}
@@ -69,7 +109,9 @@ func sessionsSignature(payload map[string]any) string {
 // watchSessions keeps the session list fresh for every connected phone, without
 // running the herdr CLI on every poll.
 func (s *Server) watchSessions(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	// Fast enough that a session born or deleted in herdr shows up (or goes
+	// away) while the human is still looking at the phone.
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	last := ""
 	for {
@@ -77,6 +119,7 @@ func (s *Server) watchSessions(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			s.reloadOrchestration()
 			payload := s.sessionsPayload(ctx)
 			signature := sessionsSignature(payload)
 			if signature == last {

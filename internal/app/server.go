@@ -37,6 +37,7 @@ import (
 	"github.com/0cv/herdr-mobile-relay/internal/history"
 	"github.com/0cv/herdr-mobile-relay/internal/machines"
 	"github.com/0cv/herdr-mobile-relay/internal/noecho"
+	"github.com/0cv/herdr-mobile-relay/internal/orchestration"
 	"github.com/0cv/herdr-mobile-relay/internal/panesize"
 	"github.com/0cv/herdr-mobile-relay/internal/profiles"
 	"github.com/0cv/herdr-mobile-relay/internal/protocol"
@@ -122,12 +123,15 @@ type Server struct {
 	// mirroredSession is the name of the session behind the mirrored socket,
 	// cached for logs and refreshed whenever the session list is read.
 	mirroredSession string
-	updateM         *relayupdate.Manager
-	appDeployM      *appdeploy.Manager
-	hybrid          *hybridTransport
-	uploadM         *upload.Manager
-	deviceAuth      *deviceauth.Store
-	initErr         error
+	// orchestration is the central registry, kept here so every session the
+	// relay serves can be labelled without re-reading the file per request.
+	orchestration orchestration.Registry
+	updateM       *relayupdate.Manager
+	appDeployM    *appdeploy.Manager
+	hybrid        *hybridTransport
+	uploadM       *upload.Manager
+	deviceAuth    *deviceauth.Store
+	initErr       error
 
 	mu        sync.RWMutex
 	ready     bool
@@ -170,6 +174,12 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 	state := coordinator.NewState(logger)
 	hub := transport.NewHub(cfg, logger)
 	herdrClient := herdr.NewClient(cfg.HerdrBin, cfg.SocketPath)
+	registry, registryErr := orchestration.Load(cfg.OrchestrationPath)
+	if registryErr != nil {
+		logger.Warn("orchestration registry unreadable; using the embedded defaults", "path", cfg.OrchestrationPath, "error", registryErr)
+	} else {
+		logger.Info("orchestration registry loaded", "path", cfg.OrchestrationPath, "sessions", len(registry.Sessions))
+	}
 	// Say which session is being mirrored, and where, at every start: a relay
 	// that silently talks to the wrong session is a support call.
 	logger.Info("mirroring herdr session", "session", cfg.Session, "socket", cfg.SocketPath)
@@ -237,6 +247,7 @@ func New(cfg *config.Config, version, revision string, logger *slog.Logger) *Ser
 	return &Server{
 		cfg:                 cfg,
 		mirroredSession:     cfg.Session,
+		orchestration:       registry,
 		version:             version,
 		revision:            revision,
 		hostname:            hostname,
@@ -1247,6 +1258,8 @@ func (s *Server) Run(ctx context.Context) error {
 			s.requestAgentRefresh(client)
 		case "select_session":
 			s.handleSelectSession(client, inbound, action)
+		case "session_snapshot":
+			s.handleSessionSnapshot(client, inbound, action)
 		case "watchdog_status":
 			// Read-only and on demand: the panels ask for it, so their plumbing
 			// never sits in the payload every phone downloads to show agents.

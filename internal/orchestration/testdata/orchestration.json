@@ -1,0 +1,26 @@
+{
+  "defaults": {
+    "manager": "manager-v3",
+    "panels": ["vigilante", "dato", "servicios", "deploys", "backups"],
+    "policies": {
+      "fail_open": "estrecha",
+      "gracia_seg": 60,
+      "despertador_min": 30
+    },
+    "scopes": ["local"]
+  },
+  "sessions": {
+    "default": {
+      "label": "1us · plataforma",
+      "project": "/home/alcala/Documents/github/1us",
+      "queue": "/home/alcala/.local/share/herdr-mobile-relay/queue-tasks.json",
+      "machines": ["server-1", "server-2"],
+      "scopes": ["local", "server-1", "server-2"]
+    }
+  },
+  "agents": {
+    "manager-v3": "manager",
+    "t2-motor-turso": "front",
+    "w11": "front"
+  }
+}

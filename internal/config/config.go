@@ -44,12 +44,15 @@ type Config struct {
 	// WatchStatusPath is the watchdog's own state file (manager-watch.status).
 	// The phone's watchdog panel reads it; the relay only hands it over.
 	WatchStatusPath string
-	PollInterval    float64
-	RuntimeDir      string
-	LogFormat       string
-	LogLevel        slog.Level
-	ReleaseRoot     string
-	ServiceName     string
+	// OrchestrationPath is the central registry (orchestration.json): which
+	// sessions exist, what each is called and where its board lives.
+	OrchestrationPath string
+	PollInterval      float64
+	RuntimeDir        string
+	LogFormat         string
+	LogLevel          slog.Level
+	ReleaseRoot       string
+	ServiceName       string
 
 	// GatewayURL is the configured tie-break leader, kept equal to
 	// GatewayURLs[0] so readers that only know one gateway keep working. The
@@ -150,6 +153,13 @@ func Load() (*Config, error) {
 	}
 	if cfg.WatchStatusPath == "" {
 		cfg.WatchStatusPath = filepath.Join(stateHome(), "manager-watch.status")
+	}
+
+	if cfg.OrchestrationPath == "" {
+		cfg.OrchestrationPath = os.Getenv("HERDR_ORCHESTRATION_PATH")
+	}
+	if cfg.OrchestrationPath == "" {
+		cfg.OrchestrationPath = filepath.Join(homeDir(), "Documents", "github", "herdr-manager-wake", "orchestration.json")
 	}
 
 	cfg.RuntimeDir = resolveRuntimeDir(cfg.ConfigHome)
