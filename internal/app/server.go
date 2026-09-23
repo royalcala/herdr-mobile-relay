@@ -119,12 +119,15 @@ type Server struct {
 	// the new socket; sessionMu serialises those switches.
 	eventClient *herdr.EventClient
 	sessionMu   sync.Mutex
-	updateM     *relayupdate.Manager
-	appDeployM  *appdeploy.Manager
-	hybrid      *hybridTransport
-	uploadM     *upload.Manager
-	deviceAuth  *deviceauth.Store
-	initErr     error
+	// mirroredSession is the name of the session behind the mirrored socket,
+	// cached for logs and refreshed whenever the session list is read.
+	mirroredSession string
+	updateM         *relayupdate.Manager
+	appDeployM      *appdeploy.Manager
+	hybrid          *hybridTransport
+	uploadM         *upload.Manager
+	deviceAuth      *deviceauth.Store
+	initErr         error
 
 	mu        sync.RWMutex
 	ready     bool
@@ -940,7 +943,7 @@ func (s *Server) Run(ctx context.Context) error {
 		case "clear_activities":
 			requestID, _ := msg["request_id"].(string)
 			s.dispatcher.HandleClearActivities(requestID, func(result *coordinator.CommandResult) {
-				s.hub.Send(client, commandResultMessage(result))
+				s.publishCommandResult(client, result)
 			})
 		case "upload_begin":
 			s.handleUploadBegin(client, inbound.RequestID, msg)
@@ -1012,7 +1015,7 @@ func (s *Server) Run(ctx context.Context) error {
 			if auditedWrite {
 				s.recordWriteAudit(client, msg, result)
 			}
-			s.hub.Send(client, commandResultMessage(result))
+			s.publishCommandResult(client, result)
 		case "list_directories":
 			requestID, _ := msg["request_id"].(string)
 			path, _ := msg["path"].(string)
@@ -1254,7 +1257,7 @@ func (s *Server) Run(ctx context.Context) error {
 				if auditedWrite {
 					s.recordWriteAudit(client, msg, result)
 				}
-				s.hub.Send(client, commandResultMessage(result))
+				s.publishCommandResult(client, result)
 				break
 			}
 			var result *coordinator.CommandResult
@@ -1266,7 +1269,7 @@ func (s *Server) Run(ctx context.Context) error {
 			if auditedWrite {
 				s.recordWriteAudit(client, msg, result)
 			}
-			s.hub.Send(client, commandResultMessage(result))
+			s.publishCommandResult(client, result)
 		}
 	})
 
@@ -1400,6 +1403,7 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 	startBackground(func() { s.poller.RunEvents(ctx, eventClient) })
 	startBackground(func() { s.watchSessions(ctx) })
+	startBackground(func() { s.watchSessionSocket(ctx) })
 	startBackground(func() { s.watchQueue(ctx) })
 	startBackground(func() { s.captureHistoryLoop(ctx) })
 	startBackground(func() { s.paneSizeM.Run(ctx) })
@@ -3020,7 +3024,7 @@ func (s *Server) sendCommandResult(
 		PaneID:    paneID,
 		Data:      data,
 	}
-	s.hub.Send(client, commandResultMessage(result))
+	s.publishCommandResult(client, result)
 }
 
 func fitSlashCommandCatalog(catalog slashcmd.Catalog, requestID, action, paneID string) slashcmd.Catalog {
@@ -3074,7 +3078,7 @@ func (s *Server) sendAuditedCommandResult(
 		Data:      data,
 	}
 	s.recordWriteAudit(client, message, result)
-	s.hub.Send(client, commandResultMessage(result))
+	s.publishCommandResult(client, result)
 }
 
 func commandResultMessage(result *coordinator.CommandResult) map[string]any {

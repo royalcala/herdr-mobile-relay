@@ -21,6 +21,9 @@ func (s *Server) sessionsPayload(ctx context.Context) map[string]any {
 	if list, err := s.herdrC.ListSessions(ctx); err == nil {
 		if current, ok := herdr.SessionForSocket(list, activeSocket); ok {
 			active = current.Name
+			s.sessionMu.Lock()
+			s.mirroredSession = current.Name
+			s.sessionMu.Unlock()
 		}
 		for _, session := range list {
 			sessions = append(sessions, map[string]any{
